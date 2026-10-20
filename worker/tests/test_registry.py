@@ -3,6 +3,7 @@ import pytest
 from worker.adapters.base import (
     AdapterRegistry,
     ContractError,
+    CONTRACT_METHODS,
     HealthReport,
     HealthStatus,
     PlatformAdapter,
@@ -48,3 +49,27 @@ def test_register_rejects_missing_platform_id():
 
     with pytest.raises(ContractError, match="platform_id"):
         AdapterRegistry().register(_NoId())
+
+
+def test_register_rejects_duplicate_platform_id():
+    registry = AdapterRegistry()
+    registry.register(_Full())
+    with pytest.raises(ContractError, match="platform_id 冲突"):
+        registry.register(_Full())
+
+
+def test_contract_methods_match_abstract_interface():
+    assert set(CONTRACT_METHODS) == set(PlatformAdapter.__abstractmethods__)
+
+
+def test_load_adapters_autoregisters_demo(tmp_path, monkeypatch):
+    from worker.adapters import demo as demo_mod
+    from worker.adapters.base import load_adapters
+
+    monkeypatch.chdir(tmp_path)
+    registry = load_adapters()
+    assert "demo" in registry.all()
+    # 假平台真实可走完四方法
+    a = registry.get("demo")
+    assert a.check_health().status.value == "ok"
+    assert a.fetch_trends()[0].title

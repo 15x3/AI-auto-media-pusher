@@ -1,4 +1,6 @@
-"""平台适配器契约：四方法 + 元数据 + 注册表。"""
+"""平台适配器契约：四方法 + 元数据 + 自动注册表。"""
+import importlib
+import pkgutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
@@ -80,6 +82,11 @@ class AdapterRegistry:
             raise ContractError(f"{cls.__name__} 缺少契约方法: {missing}")
         if not adapter.platform_id:
             raise ContractError(f"{cls.__name__} 缺少 platform_id")
+        if adapter.platform_id in self._adapters:
+            raise ContractError(
+                f"platform_id 冲突: {adapter.platform_id!r} 已注册于 "
+                f"{type(self._adapters[adapter.platform_id]).__name__}"
+            )
         self._adapters[adapter.platform_id] = adapter
 
     def get(self, platform_id: str) -> PlatformAdapter:
@@ -87,3 +94,23 @@ class AdapterRegistry:
 
     def all(self) -> dict[str, PlatformAdapter]:
         return dict(self._adapters)
+
+
+def load_adapters(package: str = "worker.adapters") -> "AdapterRegistry":
+    """扫描适配器包目录，放即注册：凡继承 PlatformAdapter 的具体类自动进入注册表。"""
+    registry = AdapterRegistry()
+    pkg = importlib.import_module(package)
+    for mod_info in pkgutil.iter_modules(pkg.__path__):
+        if mod_info.name == "base":
+            continue
+        module = importlib.import_module(f"{package}.{mod_info.name}")
+        for obj in vars(module).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, PlatformAdapter)
+                and obj is not PlatformAdapter
+                and obj.__module__.startswith(package)
+                and not getattr(obj, "__abstractmethods__", None)
+            ):
+                registry.register(obj())
+    return registry
