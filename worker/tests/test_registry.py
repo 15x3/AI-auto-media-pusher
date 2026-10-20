@@ -63,7 +63,6 @@ def test_contract_methods_match_abstract_interface():
 
 
 def test_load_adapters_autoregisters_demo(tmp_path, monkeypatch):
-    from worker.adapters import demo as demo_mod
     from worker.adapters.base import load_adapters
 
     monkeypatch.chdir(tmp_path)
@@ -73,3 +72,26 @@ def test_load_adapters_autoregisters_demo(tmp_path, monkeypatch):
     a = registry.get("demo")
     assert a.check_health().status.value == "ok"
     assert a.fetch_trends()[0].title
+    post = a.compose_post("t", "b", [])
+    r = a.execute_publish(post)
+    assert r.success
+    import json
+
+    data = json.loads((tmp_path / "demo_published.json").read_text(encoding="utf-8"))
+    assert data[-1]["title"] == "[demo] t"
+
+
+def test_load_adapters_ignores_reexported_classes():
+    from worker.adapters.base import load_adapters
+
+    # reexport.py 转手引入 RealAdapter（定义于 real.py）：只应注册一次
+    registry = load_adapters("tests.synth_adapters.reexport_case")
+    assert set(registry.all()) == {"real"}
+
+
+def test_load_adapters_skips_idless_intermediate_classes():
+    from worker.adapters.base import load_adapters
+
+    # shared.py 是四方法齐全但无 platform_id 的共享基类：跳过；只收终端适配器
+    registry = load_adapters("tests.synth_adapters.shared_case")
+    assert set(registry.all()) == {"terminal"}

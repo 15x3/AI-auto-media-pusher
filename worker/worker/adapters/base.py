@@ -109,7 +109,8 @@ def load_adapters(package: str = "worker.adapters") -> "AdapterRegistry":
                 isinstance(obj, type)
                 and issubclass(obj, PlatformAdapter)
                 and obj is not PlatformAdapter
-                and obj.__module__.startswith(package)
+                and obj.__module__ == f"{package}.{mod_info.name}"
+                and getattr(obj, "platform_id", "")
                 and not getattr(obj, "__abstractmethods__", None)
             ):
                 registry.register(obj())
