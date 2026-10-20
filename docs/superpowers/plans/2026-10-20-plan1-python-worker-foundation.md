@@ -872,7 +872,7 @@ class GlobalMemory:
         (vec,) = self._embedder.embed([text])
         self._con.execute(
             "INSERT INTO post_vec(post_id, embedding) VALUES(?, ?)",
-            (post_id, sqlite_vec.serialize_float(vec)),
+            (post_id, sqlite_vec.serialize_float32(vec)),
         )
         self._con.commit()
         return post_id
@@ -881,7 +881,7 @@ class GlobalMemory:
         (query,) = self._embedder.embed([text])
         rows = self._con.execute(
             "SELECT post_id, distance FROM post_vec WHERE embedding MATCH ? AND k = ?",
-            (sqlite_vec.serialize_float(query), k * 2),
+            (sqlite_vec.serialize_float32(query), k * 2),
         ).fetchall()
         posts = {
             pid: {"platform": platform, "title": title, "body": body, "edited": bool(edited)}
