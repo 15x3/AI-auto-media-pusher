@@ -1266,8 +1266,10 @@ Expected: FAIL（`Pipeline.approve` / `worker.cli` 不存在）
         title = edited_title or draft.title
         body = edited_body or draft.body
         adapter = self.registry.get(draft.platform)
-        if edited:
-            draft.post = adapter.compose_post(title, body, draft.images)  # 改写后需重新适配平台规范
+        if edited or draft.post is None:
+            # 改写后需重新适配平台规范；跨进程加载的草稿 post 为 None（_load_drafts 不持久化
+            # PlatformPost），发布前必须重建——tags 本就是 compose 时平台侧生成的
+            draft.post = adapter.compose_post(title, body, draft.images)
 
         result = adapter.execute_publish(draft.post)
         if result.success:
@@ -1385,3 +1387,5 @@ git commit -m "feat(worker): 审核动作（发布写回 L3/改写降权/驳回�
 4. **单模块 import 失败语义**：当前 fail-fast（炸全部）。计划 2 需决策：per-module try/except + warning，或文档明确 fail-fast（playwright 未装不应瘫痪 demo）
 5. **适配器文档义务**：适配器必须可无参构造（或提供 builder 注入路径），配置延迟初始化
 6. **错误码契约提醒**（Task 2 审查）：Electron 端 RPC 客户端沿用「error 为字符串」约定，不引入 `{code, message}` 结构
+7. **rejections 增长上限**（Task 6 审查）：L2 的 rejections 列表无界增长，接入真实 LLM 后会随驳回次数线性膨胀 system prompt——需要截断/摘要/上限机制（如只保留最近 N 条 + 汇总旧理由）
+8. **draft 表补 created_at**（Task 6 审查，Task 9 顺手做）：草稿箱 UI 要显示生成时间，趁无真实数据在 SCHEMA 的 draft 表加 `created_at TEXT NOT NULL DEFAULT (datetime('now'))`
