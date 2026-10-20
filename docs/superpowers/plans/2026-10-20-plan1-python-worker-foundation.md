@@ -1376,3 +1376,12 @@ git commit -m "feat(worker): 审核动作（发布写回 L3/改写降权/驳回�
 
 - **计划 2**：真实适配器（xiaohongshu / bilibili_column，Playwright + Cookie 会话 + 错误分类）与真实 LLM/文生图/embedding API 客户端
 - **计划 3**：Electron 主进程（Worker 守护 + IPC 路由）与 React UI（仪表盘/主题系统/轨道时钟/草稿箱）
+
+### 计划 2 前置决策（Task 5 质量审查实证踩实，届时遵循）
+
+1. **单文件适配器布局**：`adapters/xiaohongshu.py` 而非目录式——`pkgutil.iter_modules` 不递归子包；若确需目录式，扫描器改 `walk_packages`
+2. **共享 Playwright 公共基类**：放独立模块且不声明 `platform_id`（计划 1 的扫描器只收声明了 id 的终端适配器）
+3. **配置注入**：真实适配器需要 Cookie/浏览器配置——扩展 `load_adapters(package, builder=lambda cls: cls())` 或约定 `from_config` 类方法（向后兼容，计划 1 的 `package: str` 参数已验证此类缝好用）
+4. **单模块 import 失败语义**：当前 fail-fast（炸全部）。计划 2 需决策：per-module try/except + warning，或文档明确 fail-fast（playwright 未装不应瘫痪 demo）
+5. **适配器文档义务**：适配器必须可无参构造（或提供 builder 注入路径），配置延迟初始化
+6. **错误码契约提醒**（Task 2 审查）：Electron 端 RPC 客户端沿用「error 为字符串」约定，不引入 `{code, message}` 结构
