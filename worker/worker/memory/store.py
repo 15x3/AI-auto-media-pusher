@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS draft (
     title       TEXT NOT NULL,
     body        TEXT NOT NULL,
     images_json TEXT NOT NULL DEFAULT '[]',
-    status      TEXT NOT NULL DEFAULT 'pending_review'
+    status      TEXT NOT NULL DEFAULT 'pending_review',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
