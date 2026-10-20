@@ -1390,3 +1390,6 @@ git commit -m "feat(worker): 审核动作（发布写回 L3/改写降权/驳回�
 7. **rejections 增长上限**（Task 6 审查）：L2 的 rejections 列表无界增长，接入真实 LLM 后会随驳回次数线性膨胀 system prompt——需要截断/摘要/上限机制（如只保留最近 N 条 + 汇总旧理由）
 8. **draft 表补 created_at**（Task 6 审查，Task 9 顺手做）：草稿箱 UI 要显示生成时间，趁无真实数据在 SCHEMA 的 draft 表加 `created_at TEXT NOT NULL DEFAULT (datetime('now'))`
 9. **Task 7 计划代码滞后于实现**（commit `64fcc67` 加固）：`l3.py` 实际实现比本计划 Task 7 代码块多三处——add() 原子性（embed 前置 + rollback）、recall 窗口 `max(k*2, 全库行数)`、构造期维度哨兵探测（不符抛 ValueError）。API 面（构造签名/add/recall 返回结构）未变，Task 9/10 按本计划接线即可，以实现为准
+10. **approve 的非原子顺序**（Task 10 审查）：publish → save → L3 add 序列中，进程在 publish 后崩溃会留下"已发布但未进召回库"的帖（风格记忆静默丢失）；L3 写失败会以异常遮蔽发布成功。计划 2 给 L3 写回包 try/except + 警告日志（发布事实优先于记忆写入）；真实适配器下这是 at-least-once publish，错误分类时需考虑
+11. **draft 表存生成态 vs 发布态**（Task 10 审查）：approve 带改写发布后，draft 行仍是生成态文本（L3 已拿到改写文本）。计划 3 草稿箱 UI 读 draft 表会把已发布帖显示为改写前内容——需决策：approve 成功分支回写 `draft.title/body = title/body`（+2 行），或 UI 从 L3/发布产物取发布态
+12. **未知 draft_id 的 KeyError**（Task 10 审查）：approve/reject 对不存在 ID 抛裸 KeyError，与状态守卫的中文 ValueError 不对称——一行 `get` + 同款 ValueError 可齐平，随手做
