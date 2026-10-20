@@ -96,7 +96,9 @@ class Pipeline:
     # ---- 持久化 ----
 
     def _count_runs(self) -> int:
-        (n,) = self._con.execute("SELECT COUNT(*) FROM draft").fetchone()
+        (n,) = self._con.execute(
+            "SELECT COALESCE(MAX(CAST(substr(draft_id, 2) AS INTEGER)), 0) FROM draft"
+        ).fetchone()
         return n
 
     def _save_draft(self, draft: Draft) -> None:
