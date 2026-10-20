@@ -1393,3 +1393,6 @@ git commit -m "feat(worker): 审核动作（发布写回 L3/改写降权/驳回�
 10. **approve 的非原子顺序**（Task 10 审查）：publish → save → L3 add 序列中，进程在 publish 后崩溃会留下"已发布但未进召回库"的帖（风格记忆静默丢失）；L3 写失败会以异常遮蔽发布成功。计划 2 给 L3 写回包 try/except + 警告日志（发布事实优先于记忆写入）；真实适配器下这是 at-least-once publish，错误分类时需考虑
 11. **draft 表存生成态 vs 发布态**（Task 10 审查）：approve 带改写发布后，draft 行仍是生成态文本（L3 已拿到改写文本）。计划 3 草稿箱 UI 读 draft 表会把已发布帖显示为改写前内容——需决策：approve 成功分支回写 `draft.title/body = title/body`（+2 行），或 UI 从 L3/发布产物取发布态
 12. **未知 draft_id 的 KeyError**（Task 10 审查）：approve/reject 对不存在 ID 抛裸 KeyError，与状态守卫的中文 ValueError 不对称——一行 `get` + 同款 ValueError 可齐平，随手做
+13. **幻影编辑防护需下沉**（最终审查）：`_normalize` 只在 CLI 层，计划 3 的 RPC 路径直调 `Pipeline.approve` 传空串仍会假降权——把规整下沉到 Pipeline.approve 入口（CLI 层可保留亦可去除）
+14. **Electron RPC 客户端过滤 notification 帧**（最终审查）：`Response.from_json` 对无 id 的广播帧会 KeyError——计划 3 客户端必须先按 `method` 键过滤再解析；服务端对畸形消息静默丢弃的语义同理需文档化
+15. **双常驻实例 draft_id 撞号**（最终审查）：`_count_runs` 只在构造时取 MAX——计划 3 Electron 常驻 Pipeline 与手动 CLI 并存写同一 DB 时可能撞号，届时改为发布前唯一性校验或 DB 自增主键
