@@ -1,11 +1,11 @@
 """WebSocket JSON-RPC 服务器：方法路由 + 事件广播。"""
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from websockets.asyncio.server import serve
+from websockets.asyncio.server import ServerConnection, serve
 
 Handler = Callable[[dict[str, Any]], Awaitable[Any]]
 
@@ -15,7 +15,7 @@ class RpcServer:
         self.host = host
         self.port = port
         self._methods: dict[str, Handler] = {}
-        self._clients: set = set()
+        self._clients: set[ServerConnection] = set()
 
     @property
     def url(self) -> str:
@@ -32,9 +32,9 @@ class RpcServer:
         if not self._clients:
             return
         payload = json.dumps({"jsonrpc": "2.0", "method": method, "params": params}, ensure_ascii=False)
-        await asyncio.gather(*(ws.send(payload) for ws in list(self._clients)))
+        await asyncio.gather(*(ws.send(payload) for ws in list(self._clients)), return_exceptions=True)
 
-    async def _handle(self, ws) -> None:
+    async def _handle(self, ws: ServerConnection) -> None:
         self._clients.add(ws)
         try:
             async for raw in ws:
@@ -60,7 +60,7 @@ class RpcServer:
             return {"jsonrpc": "2.0", "id": mid, "error": str(exc)}
 
     @asynccontextmanager
-    async def start(self):
+    async def start(self) -> AsyncIterator["RpcServer"]:
         """启动监听；port=0 时由 OS 分配并回填 self.port，server.url 随之可用。"""
         async with serve(self._handle, self.host, self.port) as s:
             if self.port == 0:
