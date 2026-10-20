@@ -1,15 +1,20 @@
 """L3 全局记忆：历史帖向量库。写作前召回风格样例，发布后写回；被改写的帖子降权。"""
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import sqlite_vec
 
+if TYPE_CHECKING:
+    from worker.llm.client import Embedder
+
 
 class GlobalMemory:
-    def __init__(self, con: sqlite3.Connection, embedder: Any, dims: int = 8) -> None:
+    def __init__(self, con: sqlite3.Connection, embedder: "Embedder", dims: int = 8) -> None:
         self._con = con
         self._embedder = embedder
-        self._dims = dims
+        probe = embedder.embed(["probe"])[0]
+        if len(probe) != dims:
+            raise ValueError(f"embedder 输出维度 {len(probe)} 与建表维度 {dims} 不一致")
         con.enable_load_extension(True)
         sqlite_vec.load(con)
         con.enable_load_extension(False)
@@ -20,24 +25,30 @@ class GlobalMemory:
         con.commit()
 
     def add(self, text: str, platform: str, title: str, body: str, edited: bool) -> int:
-        cur = self._con.execute(
-            "INSERT INTO post_archive(platform, title, body, edited_by_user) VALUES(?, ?, ?, ?)",
-            (platform, title, body, int(edited)),
-        )
-        post_id = cur.lastrowid
-        (vec,) = self._embedder.embed([text])
-        self._con.execute(
-            "INSERT INTO post_vec(post_id, embedding) VALUES(?, ?)",
-            (post_id, sqlite_vec.serialize_float32(vec)),
-        )
+        (vec,) = self._embedder.embed([text])  # 先 embed：失败时未触碰任何写路径
+        try:
+            cur = self._con.execute(
+                "INSERT INTO post_archive(platform, title, body, edited_by_user) VALUES(?, ?, ?, ?)",
+                (platform, title, body, int(edited)),
+            )
+            post_id = cur.lastrowid
+            self._con.execute(
+                "INSERT INTO post_vec(post_id, embedding) VALUES(?, ?)",
+                (post_id, sqlite_vec.serialize_float32(vec)),
+            )
+        except Exception:
+            self._con.rollback()
+            raise
         self._con.commit()
         return post_id
 
     def recall(self, text: str, k: int = 3) -> list[dict[str, Any]]:
         (query,) = self._embedder.embed([text])
+        # KNN 窗口放大到全库：edited 帖密集时 k*2 会把较远的未改写帖整批挡在窗口外
+        total = self._con.execute("SELECT COUNT(*) FROM post_archive").fetchone()[0]
         rows = self._con.execute(
             "SELECT post_id, distance FROM post_vec WHERE embedding MATCH ? AND k = ?",
-            (sqlite_vec.serialize_float32(query), k * 2),
+            (sqlite_vec.serialize_float32(query), max(k * 2, total)),
         ).fetchall()
         posts = {
             pid: {"platform": platform, "title": title, "body": body, "edited": bool(edited)}
