@@ -16,6 +16,13 @@ def _pipeline(db: str) -> Pipeline:
     )
 
 
+def _normalize(text: str | None) -> str | None:
+    """空串/纯空白视为未提供（None）——避免「幻影编辑」：L3 降权但内容实际未变。"""
+    if text is None:
+        return None
+    return text.strip() or None
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="worker", description="AI 社媒自动化 Worker（CLI 模式）")
     parser.add_argument("--db", default="agent.db", help="SQLite 数据库路径")
@@ -44,8 +51,13 @@ def main(argv: list[str] | None = None) -> None:
         print(f"draft_id={draft.draft_id} status={draft.status} platform={draft.platform}")
         print(f"title={draft.title}")
     elif args.cmd == "approve":
-        result = pipe.approve(args.draft_id, edited_title=args.title, edited_body=args.body)
-        print(f"status=published success={result.success} url={result.post_url} error={result.error}")
+        result = pipe.approve(
+            args.draft_id, edited_title=_normalize(args.title), edited_body=_normalize(args.body)
+        )
+        status = pipe.drafts[args.draft_id].status
+        print(f"status={status} success={result.success} url={result.post_url} error={result.error}")
+        if not result.success:
+            raise SystemExit(1)
     elif args.cmd == "reject":
         pipe.reject(args.draft_id, reason=args.reason)
         print("status=rejected")
