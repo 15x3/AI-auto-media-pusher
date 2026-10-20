@@ -3,7 +3,6 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 from .adapters.base import AdapterRegistry, PlatformPost, PublishResult
 from .llm.client import Embedder, LLMClient
@@ -92,6 +91,38 @@ class Pipeline:
         self.last_context = ctx
         ctx.archive()  # L1 归档
         return draft
+
+    # ---- 审核动作（人机边界：compose 之后、publish 之前）----
+
+    def approve(self, draft_id: str, edited_title: str | None = None, edited_body: str | None = None) -> PublishResult:
+        draft = self.drafts[draft_id]
+        if draft.status != "pending_review":
+            raise ValueError(f"draft {draft_id} 状态为 {draft.status}，不能发布")
+
+        edited = edited_title is not None or edited_body is not None
+        title = edited_title or draft.title
+        body = edited_body or draft.body
+        adapter = self.registry.get(draft.platform)
+        if edited or draft.post is None:
+            # 改写后需重新适配平台规范；跨进程加载的草稿 post 为 None（_load_drafts 不持久化
+            # PlatformPost），发布前必须重建——tags 本就是 compose 时平台侧生成的
+            draft.post = adapter.compose_post(title, body, draft.images)
+        result = adapter.execute_publish(draft.post)
+        if result.success:
+            draft.status = "published"
+            self._save_draft(draft)
+            self.global_mem.add(  # L3 写回；被改写的帖子 edited=True → 召回降权
+                text=f"{title}\n{body}", platform=draft.platform, title=title, body=body, edited=edited
+            )
+        return result
+
+    def reject(self, draft_id: str, reason: str) -> None:
+        draft = self.drafts[draft_id]
+        if draft.status != "pending_review":
+            raise ValueError(f"draft {draft_id} 状态为 {draft.status}，不能驳回")
+        draft.status = "rejected"
+        self._save_draft(draft)
+        self.agent.record_rejection(reason)  # 驳回理由沉淀为 L2 偏好
 
     # ---- 持久化 ----
 

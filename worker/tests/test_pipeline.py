@@ -99,3 +99,56 @@ def test_new_instance_draft_ids_do_not_collide_after_failed_run(tmp_path):
     # 旧待审草稿仍在库中，未被覆盖：3 篇草稿各占一行
     (n,) = con.execute("SELECT COUNT(*) FROM draft").fetchone()
     assert n == 3
+
+
+def test_approve_publishes_and_writes_back_l3(tmp_path):
+    pipe = make_pipeline(tmp_path)
+    draft = pipe.run(platform_id="demo")
+    result = pipe.approve(draft.draft_id)
+
+    assert result.success
+    assert pipe.drafts[draft.draft_id].status == "published"
+    published = json.loads((tmp_path / "demo_published.json").read_text(encoding="utf-8"))
+    assert published[0]["title"].startswith("[demo]")
+    # L3 写回：库中已能召回这篇
+    hits = pipe.global_mem.recall(draft.title, k=1)
+    assert hits and hits[0]["edited"] is False
+
+
+def test_approve_with_edits_marks_edited_and_deprioritized(tmp_path):
+    pipe = make_pipeline(tmp_path)
+    d1 = pipe.run(platform_id="demo")
+    pipe.approve(d1.draft_id)  # 未改写，正常入库
+
+    d2 = pipe.run(platform_id="demo")
+    result = pipe.approve(d2.draft_id, edited_body="用户全面改写的正文")
+    assert result.success
+
+    # 两篇主题相同（确定性选题）；召回时未改写的 d1 排在改写的 d2 之前
+    hits = pipe.global_mem.recall(d2.title, k=2)
+    assert len(hits) == 2
+    assert hits[0]["edited"] is False and hits[1]["edited"] is True
+
+
+def test_reject_records_reason_to_l2(tmp_path):
+    pipe = make_pipeline(tmp_path)
+    draft = pipe.run(platform_id="demo")
+    pipe.reject(draft.draft_id, reason="标题太标题党")
+
+    assert pipe.drafts[draft.draft_id].status == "rejected"
+    assert pipe.agent.get_prefs()["rejections"] == ["标题太标题党"]
+
+
+def test_reload_preserves_pending_drafts_with_post_none(tmp_path):
+    pipe = make_pipeline(tmp_path)
+    d1 = pipe.run(platform_id="demo")
+
+    reloaded = Pipeline(
+        registry=pipe.registry, llm=pipe.llm, embedder=StubEmbedder(),
+        con=connect(tmp_path / "a.db"), agent_id="tech-笔记官",
+    )
+    assert d1.draft_id in reloaded.drafts
+    assert reloaded.drafts[d1.draft_id].status == "pending_review"
+    assert reloaded.drafts[d1.draft_id].post is None  # approve 重建所依赖的契约
+    result = reloaded.approve(d1.draft_id)  # post=None 路径：重建后可发布
+    assert result.success
