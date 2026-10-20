@@ -152,3 +152,26 @@ def test_reload_preserves_pending_drafts_with_post_none(tmp_path):
     assert reloaded.drafts[d1.draft_id].post is None  # approve 重建所依赖的契约
     result = reloaded.approve(d1.draft_id)  # post=None 路径：重建后可发布
     assert result.success
+
+
+def test_recall_injects_history_into_writer_prompt(tmp_path):
+    class SpyLLM(StubLLM):
+        def __init__(self):
+            super().__init__()
+            self.systems = []
+
+        def complete(self, system, user):
+            self.systems.append(system)
+            return super().complete(system, user)
+
+    con = connect(tmp_path / "a.db")
+    registry = AdapterRegistry()
+    registry.register(DemoAdapter(out_file=tmp_path / "demo_published.json"))
+    spy = SpyLLM()
+    pipe = Pipeline(registry=registry, llm=spy, embedder=StubEmbedder(), con=con)
+    first = pipe.run(platform_id="demo")
+    pipe.approve(first.draft_id)  # 第一篇入库
+
+    pipe.run(platform_id="demo")  # 第二次运行
+    assert any(first.title in s for s in spy.systems[1:])  # 历史帖标题进入第二次写作的 system prompt
+    assert all(first.title not in s for s in spy.systems[:1])  # 第一次运行时库为空，不在 prompt 中
