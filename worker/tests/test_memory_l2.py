@@ -30,3 +30,19 @@ def test_prefs_roundtrip_and_rejections(tmp_path):
     # 按 agent 隔离
     other = AgentMemory(con, agent_id="ai-测评员")
     assert other.get_prefs() == {}
+
+
+def test_run_context_archive():
+    from worker.memory.l1 import RunContext
+
+    ctx = RunContext(run_id=42)
+    ctx.topic = "AI Agent 一周动态"
+    ctx.draft_id = "d42"
+    ctx.recalled = [{"title": "历史帖"}]
+    archived = ctx.archive()
+    assert archived == {
+        "run_id": 42,
+        "topic": "AI Agent 一周动态",
+        "draft_id": "d42",
+        "recalled": [{"title": "历史帖"}],
+    }
