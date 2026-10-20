@@ -1389,3 +1389,4 @@ git commit -m "feat(worker): 审核动作（发布写回 L3/改写降权/驳回�
 6. **错误码契约提醒**（Task 2 审查）：Electron 端 RPC 客户端沿用「error 为字符串」约定，不引入 `{code, message}` 结构
 7. **rejections 增长上限**（Task 6 审查）：L2 的 rejections 列表无界增长，接入真实 LLM 后会随驳回次数线性膨胀 system prompt——需要截断/摘要/上限机制（如只保留最近 N 条 + 汇总旧理由）
 8. **draft 表补 created_at**（Task 6 审查，Task 9 顺手做）：草稿箱 UI 要显示生成时间，趁无真实数据在 SCHEMA 的 draft 表加 `created_at TEXT NOT NULL DEFAULT (datetime('now'))`
+9. **Task 7 计划代码滞后于实现**（commit `64fcc67` 加固）：`l3.py` 实际实现比本计划 Task 7 代码块多三处——add() 原子性（embed 前置 + rollback）、recall 窗口 `max(k*2, 全库行数)`、构造期维度哨兵探测（不符抛 ValueError）。API 面（构造签名/add/recall 返回结构）未变，Task 9/10 按本计划接线即可，以实现为准
