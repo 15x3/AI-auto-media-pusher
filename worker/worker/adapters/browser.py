@@ -4,9 +4,11 @@
 FIXTURE_ROUTES 为空时直连真实平台；测试注入 {url模式: 本地HTML} 后全链路离线可测。
 选择器契约：终端适配器的选择器以 fixture 页为唯一测试契约，真实页面漂移由
 PublishError.SELECTOR_BROKEN 分类捕获后校准（见各适配器 SELECTORS 常量注释）。
+使用约定：FIXTURE_ROUTES 只允许整体赋值（实例属性覆盖类属性）；context 建立后修改不生效（需 close 重开）；
+本基类为单进程同步使用设计（sync Playwright API 线程亲和）。
 """
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from .base import HealthReport, HealthStatus, PlatformAdapter
@@ -58,7 +60,8 @@ class PlaywrightBase(PlatformAdapter):
         try:
             yield page
         finally:
-            page.close()
+            with suppress(Exception):
+                page.close()
 
     def login(self) -> HealthReport:
         """打开登录页，人工扫码/输入，轮询 check_health 直到 OK 或超时。"""
@@ -73,8 +76,12 @@ class PlaywrightBase(PlatformAdapter):
 
     def close(self) -> None:
         if self._context is not None:
-            self._context.close()
-            self._context = None
+            try:
+                self._context.close()
+            finally:
+                self._context = None
         if self._pw is not None:
-            self._pw.stop()
-            self._pw = None
+            try:
+                self._pw.stop()
+            finally:
+                self._pw = None
