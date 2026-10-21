@@ -81,3 +81,14 @@ def test_dim_mismatch_raises_at_construction(tmp_path):
     con = connect(tmp_path / "a.db")
     with pytest.raises(ValueError):
         GlobalMemory(con, StubEmbedder(dims=8), dims=16)
+
+
+def test_dims_auto_inferred_when_none(tmp_path):
+    """决策 #16：dims=None 时以哨兵探测长度自动建表——真实 embedding 接入的关键路径。"""
+    from worker.llm.client import StubEmbedder
+
+    con = connect(tmp_path / "auto.db")
+    mem = GlobalMemory(con, StubEmbedder(dims=16))   # 不传 dims → 自动 16
+    mem.add("文本A", platform="demo", title="A", body="a", edited=False)
+    hits = mem.recall("文本A", k=1)
+    assert hits[0]["title"] == "A"
