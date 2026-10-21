@@ -1,4 +1,5 @@
 import base64
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -69,9 +70,10 @@ def test_execute_publish_success_flow(tmp_path):
         '<button class="submit_btn">发布</button>',
         '<button class="submit_btn" onclick="location.href=\'https://creator.xiaohongshu.com/publish/success\'">发布</button>',
     )
-    patched = FIXTURES / "xhs_publish_patched.html"
+    patched = tmp_path / "xhs_publish_patched.html"  # 写 tmp_path，不污染仓库 fixtures 目录
     patched.write_text(html, encoding="utf-8")
 
+    # 路由按 LIFO 派发：publish/success 须后注册，才能优先于更宽的 publish** 模式命中
     a = make_adapter(tmp_path,
                      **{"**://creator.xiaohongshu.com/publish**": patched,
                         "**://creator.xiaohongshu.com/publish/success**": FIXTURES / "xhs_publish_success.html"})
@@ -82,7 +84,6 @@ def test_execute_publish_success_flow(tmp_path):
         assert "note-6510f2ab" in result.post_url
     finally:
         a.close()
-        patched.unlink(missing_ok=True)  # 测试运行时生成的临时产物，不留在 fixtures 目录
 
 
 def test_execute_publish_classifies_login_expired(tmp_path):
@@ -120,3 +121,22 @@ def test_check_health_broken_when_no_markers(tmp_path):
         assert report.status is HealthStatus.BROKEN
     finally:
         a.close()
+
+
+def test_execute_publish_platform_rejected_bucket_semantics(tmp_path, monkeypatch):
+    """环境类异常（非超时，如浏览器崩溃/断网）→ SELECTOR_BROKEN 的待维护语义；
+    PLATFORM_REJECTED 留给真实的平台内容拒绝（校准期接入检测，决策 #22）。"""
+    from playwright.sync_api import Error as PlaywrightError
+
+    a = make_adapter(tmp_path)
+
+    @contextlib.contextmanager
+    def crashed_browser():
+        raise PlaywrightError("Target page has been closed")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(a, "browser_page", crashed_browser)  # 浏览器一启动即崩溃
+    result = a.execute_publish(a.compose_post("t", "b", []))
+    assert not result.success
+    assert result.error is PublishError.SELECTOR_BROKEN
+    assert "环境异常" in result.detail

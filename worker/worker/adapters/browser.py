@@ -57,6 +57,8 @@ class PlaywrightBase(PlatformAdapter):
             for pattern, fixture in self.FIXTURE_ROUTES.items():
                 self._context.route(pattern, _make_fixture_handler(Path(fixture)))
         page = self._context.new_page()
+        page.set_default_timeout(10000)              # 动作超时 10s（真实 React 水合留余量）
+        page.set_default_navigation_timeout(30000)   # 导航超时 30s（慢网络 goto 不误判）
         try:
             yield page
         finally:

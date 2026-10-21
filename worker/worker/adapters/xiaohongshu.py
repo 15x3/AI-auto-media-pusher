@@ -71,21 +71,30 @@ class XiaohongshuAdapter(PlaywrightBase):
     def execute_publish(self, post: PlatformPost) -> PublishResult:
         try:
             with self.browser_page() as page:
-                page.goto(PUBLISH_URL, wait_until="domcontentloaded")
-                if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
-                    return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
-                                         detail="发布页处于未登录状态，请重新 login")
-                page.locator(SEL_TAB_NOTE).click()
-                if post.images:
-                    page.locator(SEL_UPLOAD_INPUT).first.set_input_files(post.images)
-                page.locator(SEL_TITLE_INPUT).fill(post.title)
-                page.locator(SEL_BODY_INPUT).fill(post.body)
-                page.locator(SEL_SUBMIT).click()
-                page.locator(SEL_SUCCESS).first.wait_for(timeout=15000)
-                note_id = page.locator(SEL_SUCCESS).first.get_attribute("data-note-id") or ""
-                return PublishResult(success=True, post_url=f"https://www.xiaohongshu.com/explore/{note_id}")
-        except PlaywrightTimeoutError:
+                try:
+                    page.goto(PUBLISH_URL, wait_until="domcontentloaded")
+                    if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                        return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
+                                             detail="发布页处于未登录状态，请重新 login")
+                    page.locator(SEL_TAB_NOTE).click()
+                    if post.images:
+                        page.locator(SEL_UPLOAD_INPUT).first.set_input_files(post.images)
+                    page.locator(SEL_TITLE_INPUT).fill(post.title)
+                    page.locator(SEL_BODY_INPUT).fill(post.body)
+                    page.locator(SEL_SUBMIT).click()
+                    page.locator(SEL_SUCCESS).first.wait_for(timeout=15000)
+                    note_id = page.locator(SEL_SUCCESS).first.get_attribute("data-note-id") or ""
+                    return PublishResult(success=True, post_url=f"https://www.xiaohongshu.com/explore/{note_id}")
+                except PlaywrightTimeoutError:
+                    # 决策 #22② 对称：超时后复查 URL/登录标记（page 尚未关闭）——迟到跳转报 LOGIN_EXPIRED
+                    if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                        return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
+                                             detail="发布过程中跳转到登录态")
+                    return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,
+                                         detail="发布页选择器超时——页面结构可能已改版，需校准 SELECTORS")
+        except PlaywrightTimeoutError:  # goto 阶段超时（with 内未捕获的边界）
             return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,
-                                 detail="发布页选择器超时——页面结构可能已改版，需校准 SELECTORS")
-        except Exception as exc:  # 平台侧拒绝（上传失败/内容审核弹窗等）
-            return PublishResult(success=False, error=PublishError.PLATFORM_REJECTED, detail=str(exc)[:200])
+                                 detail="发布页加载超时，需校准")
+        except Exception as exc:  # 浏览器崩溃/断网等环境问题 → 待维护语义；真正的平台拒绝需校准期检测
+            return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,
+                                 detail=f"环境异常: {str(exc)[:200]}")
