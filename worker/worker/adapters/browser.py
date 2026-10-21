@@ -71,7 +71,11 @@ class PlaywrightBase(PlatformAdapter):
             page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
             deadline = time.time() + LOGIN_TIMEOUT_SECONDS
             while time.time() < deadline:
-                if self.check_health().status is HealthStatus.OK:
+                try:
+                    healthy = self.check_health().status is HealthStatus.OK
+                except Exception:  # noqa: BLE001 - 网络抖动/导航瞬时错误不打断 180 秒扫码等待
+                    healthy = False
+                if healthy:
                     return HealthReport(HealthStatus.OK, "登录成功")
                 page.wait_for_timeout(3000)
         return HealthReport(HealthStatus.NEEDS_LOGIN, f"{LOGIN_TIMEOUT_SECONDS} 秒内未完成登录")

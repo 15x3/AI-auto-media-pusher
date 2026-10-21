@@ -33,7 +33,7 @@ def _browser_builder(cfg, headless_override: bool | None = None):
         if cfg is not None:
             headless = headless_override if headless_override is not None else cfg.headless
             try:
-                return cls(headless=headless, profiles_root=cfg.profiles_root)
+                return cls(headless=headless, profiles_root=Path(cfg.profiles_root).resolve())
             except TypeError:
                 pass
         return cls()
@@ -114,7 +114,8 @@ def main(argv: list[str] | None = None) -> None:
         except KeyError as exc:
             print(f"未知平台: {args.platform}（python -m worker adapters 查看已注册平台）", file=sys.stderr)
             raise SystemExit(1) from exc
-        except RuntimeError as exc:  # 决策 #26⑥：AI/网络类失败的友好错误（含构造期 embedding 探测）
+        except (RuntimeError, ValueError) as exc:  # 决策 #26⑥：AI/网络类失败（含构造期 embedding 探测）；
+            # ValueError 为预期首跑路径——真实页面解析 0 条 → "热榜为空"
             print(f"运行失败: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
         print(f"draft_id={draft.draft_id} status={draft.status} platform={draft.platform}")
@@ -125,13 +126,21 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 print("hint=未配置 [image] 段，封面为占位符")
     elif args.cmd == "approve":
-        pipe = _pipeline(args.db, args.config)
-        result = pipe.approve(args.draft_id, edited_title=args.title, edited_body=args.body)
+        try:
+            pipe = _pipeline(args.db, args.config)
+            result = pipe.approve(args.draft_id, edited_title=args.title, edited_body=args.body)
+        except ValueError as exc:  # 未知 ID / 状态不允许（Pipeline 契约）→ 友好错误
+            print(f"操作失败: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
         status = pipe.drafts[args.draft_id].status
         print(f"status={status} success={result.success} url={result.post_url} error={result.error}")
         if not result.success:
             raise SystemExit(1)
     elif args.cmd == "reject":
-        pipe = _pipeline(args.db, args.config)
-        pipe.reject(args.draft_id, reason=args.reason)
+        try:
+            pipe = _pipeline(args.db, args.config)
+            pipe.reject(args.draft_id, reason=args.reason)
+        except ValueError as exc:  # 未知 ID / 状态不允许（Pipeline 契约）→ 友好错误
+            print(f"操作失败: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
         print("status=rejected")

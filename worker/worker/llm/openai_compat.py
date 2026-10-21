@@ -64,9 +64,12 @@ class OpenAIChatClient:
             "chat/completions",
         )
         try:
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise RuntimeError(f"chat/completions 响应形状异常: {str(data)[:200]}") from exc
+        if not isinstance(content, str):  # content 为 null/缺失 → 大概率被内容过滤
+            raise RuntimeError(f"chat/completions 响应形状异常: content 为空（可能被内容过滤）: {str(data)[:200]}")
+        return content
 
 
 class OpenAIEmbedder:
@@ -116,7 +119,7 @@ class OpenAIImageClient:
         )
         try:
             raw = base64.b64decode(data["data"][0]["b64_json"])
-        except (KeyError, IndexError, TypeError) as exc:
+        except (KeyError, IndexError, TypeError, ValueError) as exc:  # binascii.Error 是 ValueError 子类
             raise RuntimeError(f"images/generations 响应形状异常: {str(data)[:200]}") from exc
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(raw)

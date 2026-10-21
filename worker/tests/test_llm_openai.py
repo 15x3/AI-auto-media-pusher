@@ -203,3 +203,25 @@ def test_malformed_image_shape_wrapped(tmp_path):
                                transport=httpx.MockTransport(handler))
     with pytest.raises(RuntimeError, match="形状异常"):
         client.generate(prompt="p", out_path=tmp_path / "cover.png")
+
+
+def test_chat_content_null_wrapped():
+    """审查 Minor #2：content 为 null（可能被内容过滤）→ RuntimeError 而非返回 None。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": None}}]})
+
+    client = OpenAIChatClient(LLMConfig("https://api.example.com/v1", "k", "m"),
+                              transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="content 为空"):
+        client.complete("s", "u")
+
+
+def test_image_invalid_b64_wrapped(tmp_path):
+    """审查 Minor #2：非法 b64（binascii.Error 是 ValueError 子类）→ 统一"形状异常"错误面。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"b64_json": "!!!not-base64!!!"}]})
+
+    client = OpenAIImageClient(ImageConfig("https://api.example.com/v1", "k", "m"),
+                               transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="形状异常"):
+        client.generate("p", tmp_path / "x.png")

@@ -225,6 +225,40 @@ def test_cli_login_unknown_platform_friendly(tmp_path, monkeypatch, capsys):
     assert "未知平台" in capsys.readouterr().err
 
 
+def test_cli_run_valueerror_friendly(tmp_path, monkeypatch, capsys):
+    """热榜为空（真实首跑预期路径）→ 友好错误 + exit 1。"""
+    import pytest
+
+    from worker import cli
+
+    class _EmptyTrendsPipeline:
+        def __init__(self, *a, **k):
+            pass
+
+        def run(self, platform_id):
+            raise ValueError("平台 xiaohongshu 热榜为空，本轮无法选题")
+
+    monkeypatch.setattr(cli, "_pipeline", lambda *a, **k: _EmptyTrendsPipeline())
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as ei:
+        cli.main(["run", "xiaohongshu"])
+    assert ei.value.code == 1
+    assert "运行失败" in capsys.readouterr().err
+
+
+def test_cli_approve_unknown_id_friendly(tmp_path, monkeypatch, capsys):
+    """approve 未知草稿 ID → 友好错误（操作失败）+ exit 1，而非裸 ValueError。"""
+    import pytest
+
+    from worker import cli
+
+    monkeypatch.chdir(tmp_path)   # 空目录 → 新库 → nope 不存在
+    with pytest.raises(SystemExit) as ei:
+        cli.main(["approve", "nope"])
+    assert ei.value.code == 1
+    assert "不存在" in capsys.readouterr().err
+
+
 def test_cli_run_hint_distinguishes_missing_image_section(tmp_path, monkeypatch, capsys):
     """有配置但缺 [image] 段时，占位封面提示应指向 [image] 段而非桩模式。"""
     from worker import cli
