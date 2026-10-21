@@ -1965,3 +1965,6 @@ git commit -m "feat(worker): CLI 真实装配/login 命令/使用文档"
 21. **PlaywrightBase 三处廉价加固**（P2T5 审查 Minor，Task 6 顺手做）：① browser_page 的 finally 中 `page.close()` 包 `contextlib.suppress(Exception)`（浏览器已崩溃时不掩盖原始异常）；② close() 的 `context.close()` 包 try/finally 保证 `pw.stop()` 必然执行；③ docstring 注明 FIXTURE_ROUTES 只允许整体赋值、context 建立后修改不生效、单进程同步使用约定。
 
 22. **真实页面校准期待办**（P2T6 审查）：① fetch_trends 的 per-item 容错（真实热度"1.2万"格式解析、坏条目跳过而非 30s 挂起）——fixture 契约下条目结构统一，接入真实页面时校准；② check_health 超时判 BROKEN 前复查 URL（迟到跳转窗口）——Task 7 顺手做。
+
+23. **tags 死数据与模板化风控**（P2T7 审查，校准期待办）：compose_post 的 tags=["AI","自动化"] 恒定硬编码且 execute_publish 从未使用（.tag_container 无选择器）——真实小红书标签是正文里的 #话题 文本，当前真实发布零标签且恒定 tags 有模板化风控信号。校准时：compose 把 #tag 追加进 body（注意截断后追加可能超限）或交互标签 UI，值改由配置/内容生成。
+24. **环境异常分类语义**（P2T7 修复落地）：浏览器崩溃/断网等非超时异常归 SELECTOR_BROKEN（detail 前缀"环境异常"，待维护语义）；PLATFORM_REJECTED 保留给真实平台内容拒绝，校准期接入检测。Task 8 的 B站适配器复制此模式。
