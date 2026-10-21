@@ -1,0 +1,21 @@
+# 复制为 worker/config.toml 并填入真实 key（config.toml 已被 gitignore）
+# 所有端点均为 OpenAI 兼容协议：智谱 / DeepSeek / OpenAI / 本地网关均可
+
+[llm]
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+api_key = "你的KEY"
+model = "glm-4.6"
+
+[embedding]
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+api_key = "你的KEY"
+model = "embedding-3"
+dims = 2048
+
+[image]
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+api_key = "你的KEY"
+model = "cogview-4"
+
+[browser]
+headless = false   # 扫码登录期间保持 false；日常发布可改 true
