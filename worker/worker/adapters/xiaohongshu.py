@@ -92,7 +92,7 @@ class XiaohongshuAdapter(PlaywrightBase):
                                              detail="发布过程中跳转到登录态")
                     return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,
                                          detail="发布页选择器超时——页面结构可能已改版，需校准 SELECTORS")
-        except PlaywrightTimeoutError:  # goto 阶段超时（with 内未捕获的边界）
+        except PlaywrightTimeoutError:  # browser_page 启动/路由注册超时（goto 在内层已捕获）
             return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,
                                  detail="发布页加载超时，需校准")
         except Exception as exc:  # 浏览器崩溃/断网等环境问题 → 待维护语义；真正的平台拒绝需校准期检测
