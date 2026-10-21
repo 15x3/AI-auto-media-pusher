@@ -1970,3 +1970,5 @@ git commit -m "feat(worker): CLI 真实装配/login 命令/使用文档"
 24. **环境异常分类语义**（P2T7 修复落地）：浏览器崩溃/断网等非超时异常归 SELECTOR_BROKEN（detail 前缀"环境异常"，待维护语义）；PLATFORM_REJECTED 保留给真实平台内容拒绝，校准期接入检测。Task 8 的 B站适配器复制此模式。
 
 25. **Task 10 收尾清理清单**（P2T8 审查 Minor）：① 删除死 fixture `bili_publish_success.html`（无测试引用，成功判定走注入 toast）；② 两适配器各抽文件内私有谓词 `_logged_out(page)`（登录判定 4 处重复，校准时漏改即误分类——不做跨适配器基类抽象，平台 URL 判定本不同构）；③ bili fetch_trends 补全角逗号剥离 `.replace("，", "")`；④ bili `post.images[0]` 行加注释"专栏单封面契约，多余图有意丢弃"。
+
+26. **Task 10 追加收尾**（P2T9 审查）：① 从 `config.example.toml` 与 `EmbeddingConfig` 移除死字段 `dims`（维度以探测为准，示例里的旋钮必须真实生效）；② `images_root` 构造时 `.resolve()`（相对路径存库后跨进程 cwd 变化断链——计划 3 Electron 常驻进程的现实风险）；③ `reject` 的 reason 空白规整（与 approve 对称）；④ `_save_draft` 调用点加一行注释点明"发布后 DB 写失败会遮蔽成功（at-least-once 语义，决策 #10）"；⑤ README 注明"更换 embedding 模型需新建 DB（向量维度随库固定）"；⑥ CLI 对 run 的 RuntimeError 打友好错误（不裸 traceback）。ImageClient Protocol 记计划 3。
