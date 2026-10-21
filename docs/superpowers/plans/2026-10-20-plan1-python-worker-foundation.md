@@ -872,7 +872,7 @@ class GlobalMemory:
         (vec,) = self._embedder.embed([text])
         self._con.execute(
             "INSERT INTO post_vec(post_id, embedding) VALUES(?, ?)",
-            (post_id, sqlite_vec.serialize_float(vec)),
+            (post_id, sqlite_vec.serialize_float32(vec)),
         )
         self._con.commit()
         return post_id
@@ -881,7 +881,7 @@ class GlobalMemory:
         (query,) = self._embedder.embed([text])
         rows = self._con.execute(
             "SELECT post_id, distance FROM post_vec WHERE embedding MATCH ? AND k = ?",
-            (sqlite_vec.serialize_float(query), k * 2),
+            (sqlite_vec.serialize_float32(query), k * 2),
         ).fetchall()
         posts = {
             pid: {"platform": platform, "title": title, "body": body, "edited": bool(edited)}
@@ -1266,8 +1266,10 @@ Expected: FAIL（`Pipeline.approve` / `worker.cli` 不存在）
         title = edited_title or draft.title
         body = edited_body or draft.body
         adapter = self.registry.get(draft.platform)
-        if edited:
-            draft.post = adapter.compose_post(title, body, draft.images)  # 改写后需重新适配平台规范
+        if edited or draft.post is None:
+            # 改写后需重新适配平台规范；跨进程加载的草稿 post 为 None（_load_drafts 不持久化
+            # PlatformPost），发布前必须重建——tags 本就是 compose 时平台侧生成的
+            draft.post = adapter.compose_post(title, body, draft.images)
 
         result = adapter.execute_publish(draft.post)
         if result.success:
@@ -1376,3 +1378,21 @@ git commit -m "feat(worker): 审核动作（发布写回 L3/改写降权/驳回�
 
 - **计划 2**：真实适配器（xiaohongshu / bilibili_column，Playwright + Cookie 会话 + 错误分类）与真实 LLM/文生图/embedding API 客户端
 - **计划 3**：Electron 主进程（Worker 守护 + IPC 路由）与 React UI（仪表盘/主题系统/轨道时钟/草稿箱）
+
+### 计划 2 前置决策（Task 5 质量审查实证踩实，届时遵循）
+
+1. **单文件适配器布局**：`adapters/xiaohongshu.py` 而非目录式——`pkgutil.iter_modules` 不递归子包；若确需目录式，扫描器改 `walk_packages`
+2. **共享 Playwright 公共基类**：放独立模块且不声明 `platform_id`（计划 1 的扫描器只收声明了 id 的终端适配器）
+3. **配置注入**：真实适配器需要 Cookie/浏览器配置——扩展 `load_adapters(package, builder=lambda cls: cls())` 或约定 `from_config` 类方法（向后兼容，计划 1 的 `package: str` 参数已验证此类缝好用）
+4. **单模块 import 失败语义**：当前 fail-fast（炸全部）。计划 2 需决策：per-module try/except + warning，或文档明确 fail-fast（playwright 未装不应瘫痪 demo）
+5. **适配器文档义务**：适配器必须可无参构造（或提供 builder 注入路径），配置延迟初始化
+6. **错误码契约提醒**（Task 2 审查）：Electron 端 RPC 客户端沿用「error 为字符串」约定，不引入 `{code, message}` 结构
+7. **rejections 增长上限**（Task 6 审查）：L2 的 rejections 列表无界增长，接入真实 LLM 后会随驳回次数线性膨胀 system prompt——需要截断/摘要/上限机制（如只保留最近 N 条 + 汇总旧理由）
+8. **draft 表补 created_at**（Task 6 审查，Task 9 顺手做）：草稿箱 UI 要显示生成时间，趁无真实数据在 SCHEMA 的 draft 表加 `created_at TEXT NOT NULL DEFAULT (datetime('now'))`
+9. **Task 7 计划代码滞后于实现**（commit `64fcc67` 加固）：`l3.py` 实际实现比本计划 Task 7 代码块多三处——add() 原子性（embed 前置 + rollback）、recall 窗口 `max(k*2, 全库行数)`、构造期维度哨兵探测（不符抛 ValueError）。API 面（构造签名/add/recall 返回结构）未变，Task 9/10 按本计划接线即可，以实现为准
+10. **approve 的非原子顺序**（Task 10 审查）：publish → save → L3 add 序列中，进程在 publish 后崩溃会留下"已发布但未进召回库"的帖（风格记忆静默丢失）；L3 写失败会以异常遮蔽发布成功。计划 2 给 L3 写回包 try/except + 警告日志（发布事实优先于记忆写入）；真实适配器下这是 at-least-once publish，错误分类时需考虑
+11. **draft 表存生成态 vs 发布态**（Task 10 审查）：approve 带改写发布后，draft 行仍是生成态文本（L3 已拿到改写文本）。计划 3 草稿箱 UI 读 draft 表会把已发布帖显示为改写前内容——需决策：approve 成功分支回写 `draft.title/body = title/body`（+2 行），或 UI 从 L3/发布产物取发布态
+12. **未知 draft_id 的 KeyError**（Task 10 审查）：approve/reject 对不存在 ID 抛裸 KeyError，与状态守卫的中文 ValueError 不对称——一行 `get` + 同款 ValueError 可齐平，随手做
+13. **幻影编辑防护需下沉**（最终审查）：`_normalize` 只在 CLI 层，计划 3 的 RPC 路径直调 `Pipeline.approve` 传空串仍会假降权——把规整下沉到 Pipeline.approve 入口（CLI 层可保留亦可去除）
+14. **Electron RPC 客户端过滤 notification 帧**（最终审查）：`Response.from_json` 对无 id 的广播帧会 KeyError——计划 3 客户端必须先按 `method` 键过滤再解析；服务端对畸形消息静默丢弃的语义同理需文档化
+15. **双常驻实例 draft_id 撞号**（最终审查）：`_count_runs` 只在构造时取 MAX——计划 3 Electron 常驻 Pipeline 与手动 CLI 并存写同一 DB 时可能撞号，届时改为发布前唯一性校验或 DB 自增主键

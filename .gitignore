@@ -1,1 +1,8 @@
 .superpowers/
+.venv/
+__pycache__/
+*.pyc
+demo_published.json
+agent.db
+agent.db-wal
+agent.db-shm
