@@ -1960,3 +1960,6 @@ git commit -m "feat(worker): CLI 真实装配/login 命令/使用文档"
 
 18. **Playwright 路由处理器签名**（P2T5 实现发现）：Playwright 1.64 以 `(route, request)` 两个位置参数调用路由处理器，计划 Task 5 的 `lambda route, f=fixture:` 默认参方案会被 request 覆盖导致 TypeError。实现改为模块级 `_make_fixture_handler(fixture)` 闭包工厂（handler 签名 `(route, request=None)`），行为契约不变。Task 6-8 无需关心（走 FIXTURE_ROUTES 机制）。
 19. **测试 profile 目录忽略**（P2T5 自检）：`worker/tests/tmp_profiles/` 是测试运行的持久化用户数据目录，加入根 .gitignore（Task 6 顺手做）。
+
+20. **CLI login 后必须 close**（P2T5 审查级联预警）：playwright 包无 atexit 清理钩子，`sync_playwright().start()` 手动启动后进程退出依赖管道信号关闭，Windows 上偶有 Chromium/driver 残留——Task 10 的 login 命令必须 `try/finally: adapter.close()`。
+21. **PlaywrightBase 三处廉价加固**（P2T5 审查 Minor，Task 6 顺手做）：① browser_page 的 finally 中 `page.close()` 包 `contextlib.suppress(Exception)`（浏览器已崩溃时不掩盖原始异常）；② close() 的 `context.close()` 包 try/finally 保证 `pw.stop()` 必然执行；③ docstring 注明 FIXTURE_ROUTES 只允许整体赋值、context 建立后修改不生效、单进程同步使用约定。
