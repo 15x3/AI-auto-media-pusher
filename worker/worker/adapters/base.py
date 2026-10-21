@@ -1,7 +1,9 @@
 """平台适配器契约：四方法 + 元数据 + 自动注册表。"""
 import importlib
 import pkgutil
+import sys
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -96,22 +98,36 @@ class AdapterRegistry:
         return dict(self._adapters)
 
 
-def load_adapters(package: str = "worker.adapters") -> "AdapterRegistry":
-    """扫描适配器包目录，放即注册：凡继承 PlatformAdapter 的具体类自动进入注册表。"""
+def load_adapters(
+    package: str = "worker.adapters",
+    builder: "Callable[[type[PlatformAdapter]], PlatformAdapter] | None" = None,
+) -> "AdapterRegistry":
+    """扫描适配器包目录，放即注册：凡继承 PlatformAdapter 且声明 platform_id 的具体类自动进入注册表。
+
+    builder 可注入构造依赖（配置/浏览器参数）；单个模块 import 或构造失败时打印警告并跳过，
+    不拖垮其余适配器（如未安装 playwright 时 demo 仍可用）。
+    """
     registry = AdapterRegistry()
     pkg = importlib.import_module(package)
     for mod_info in pkgutil.iter_modules(pkg.__path__):
         if mod_info.name == "base":
             continue
-        module = importlib.import_module(f"{package}.{mod_info.name}")
-        for obj in vars(module).values():
-            if (
-                isinstance(obj, type)
-                and issubclass(obj, PlatformAdapter)
-                and obj is not PlatformAdapter
-                and obj.__module__ == f"{package}.{mod_info.name}"
-                and getattr(obj, "platform_id", "")
-                and not getattr(obj, "__abstractmethods__", None)
-            ):
-                registry.register(obj())
+        try:
+            module = importlib.import_module(f"{package}.{mod_info.name}")
+            candidates = [
+                obj
+                for obj in vars(module).values()
+                if (
+                    isinstance(obj, type)
+                    and issubclass(obj, PlatformAdapter)
+                    and obj is not PlatformAdapter
+                    and obj.__module__ == f"{package}.{mod_info.name}"
+                    and not getattr(obj, "__abstractmethods__", None)
+                    and getattr(obj, "platform_id", "")
+                )
+            ]
+            for cls in candidates:
+                registry.register(cls() if builder is None else builder(cls))
+        except Exception as exc:  # noqa: BLE001 - 单模块失败不拖垮扫描
+            print(f"[adapters] 模块 {package}.{mod_info.name} 加载失败，已跳过: {exc}", file=sys.stderr)
     return registry
