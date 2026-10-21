@@ -10,7 +10,6 @@ model = "glm-4.6"
 base_url = "https://open.bigmodel.cn/api/paas/v4"
 api_key = "你的KEY"
 model = "embedding-3"
-dims = 2048
 
 [image]
 base_url = "https://open.bigmodel.cn/api/paas/v4"

@@ -32,18 +32,21 @@ class XiaohongshuAdapter(PlaywrightBase):
     display_name = "小红书"
     LOGIN_URL = "https://creator.xiaohongshu.com/login"
 
+    def _logged_out(self, page) -> bool:
+        return "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0
+
     def check_health(self) -> HealthReport:
         with self.browser_page() as page:
             page.goto(HOME_URL, wait_until="domcontentloaded")
             # 登录态判定：URL 跳转（真实场景）或登录容器可见（fixture 契约）
-            if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+            if self._logged_out(page):
                 return HealthReport(HealthStatus.NEEDS_LOGIN, "处于未登录状态，需要扫码")
             try:
                 page.locator(SEL_LOGGED_IN_MARKER).first.wait_for(timeout=5000)
                 return HealthReport(HealthStatus.OK)
             except PlaywrightTimeoutError:
                 # 决策 #22②：超时后复查 URL/登录标记——迟到跳转窗口内应报 NEEDS_LOGIN 而非 BROKEN
-                if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                if self._logged_out(page):
                     return HealthReport(HealthStatus.NEEDS_LOGIN, "页面延迟跳转到登录态")
                 return HealthReport(HealthStatus.BROKEN, "登录态页面结构不符（选择器待校准）")
 
@@ -73,7 +76,7 @@ class XiaohongshuAdapter(PlaywrightBase):
             with self.browser_page() as page:
                 try:
                     page.goto(PUBLISH_URL, wait_until="domcontentloaded")
-                    if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                    if self._logged_out(page):
                         return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
                                              detail="发布页处于未登录状态，请重新 login")
                     page.locator(SEL_TAB_NOTE).click()
@@ -87,7 +90,7 @@ class XiaohongshuAdapter(PlaywrightBase):
                     return PublishResult(success=True, post_url=f"https://www.xiaohongshu.com/explore/{note_id}")
                 except PlaywrightTimeoutError:
                     # 决策 #22② 对称：超时后复查 URL/登录标记（page 尚未关闭）——迟到跳转报 LOGIN_EXPIRED
-                    if "/login" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                    if self._logged_out(page):
                         return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
                                              detail="发布过程中跳转到登录态")
                     return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,

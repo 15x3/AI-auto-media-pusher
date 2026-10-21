@@ -22,7 +22,6 @@ model = "glm-4.6"
 base_url = "https://api.example.com/v1"
 api_key = "sk-test"
 model = "embedding-3"
-dims = 2048
 
 [image]
 base_url = "https://api.example.com/v1"
@@ -35,7 +34,7 @@ headless = false
     cfg = load_config(p)
     assert cfg == AppConfig(
         llm=LLMConfig("https://api.example.com/v1", "sk-test", "glm-4.6"),
-        embedding=EmbeddingConfig("https://api.example.com/v1", "sk-test", "embedding-3", 2048),
+        embedding=EmbeddingConfig("https://api.example.com/v1", "sk-test", "embedding-3"),
         image=ImageConfig("https://api.example.com/v1", "sk-test", "cogview-4"),
         headless=False,
     )

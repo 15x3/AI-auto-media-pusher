@@ -58,7 +58,7 @@ class Pipeline:
         self.drafts: dict[str, Draft] = {}
         self.last_context: RunContext | None = None
         self.image_client = image_client
-        self.images_root = Path(images_root)
+        self.images_root = Path(images_root).resolve()
         self._load_drafts()
 
     # ---- 运行 ----
@@ -133,6 +133,7 @@ class Pipeline:
         result = adapter.execute_publish(draft.post)
         if result.success:
             draft.status = "published"
+            # 注意：发布后 DB 写失败会遮蔽成功事实（at-least-once 语义，决策 #10）
             self._save_draft(draft)
             try:
                 self.global_mem.add(  # L3 写回；被改写的帖子 edited=True → 召回降权
@@ -143,6 +144,7 @@ class Pipeline:
         return result
 
     def reject(self, draft_id: str, reason: str) -> None:
+        reason = reason.strip() or "(未填理由)"  # 空理由规整，不裸入库
         draft = self.drafts.get(draft_id)
         if draft is None:
             raise ValueError(f"draft {draft_id} 不存在")

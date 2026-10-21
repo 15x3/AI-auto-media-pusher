@@ -35,17 +35,20 @@ class BilibiliColumnAdapter(PlaywrightBase):
     display_name = "B站专栏"
     LOGIN_URL = "https://passport.bilibili.com/login"
 
+    def _logged_out(self, page) -> bool:
+        return "passport.bilibili.com" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0
+
     def check_health(self) -> HealthReport:
         with self.browser_page() as page:
             page.goto(HOME_URL, wait_until="domcontentloaded")
-            if "passport.bilibili.com" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+            if self._logged_out(page):
                 return HealthReport(HealthStatus.NEEDS_LOGIN, "处于未登录状态")
             try:
                 page.locator(SEL_LOGGED_IN_MARKER).first.wait_for(timeout=5000)
                 return HealthReport(HealthStatus.OK)
             except PlaywrightTimeoutError:
                 # 决策 #22②：迟到跳转窗口复查
-                if "passport.bilibili.com" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                if self._logged_out(page):
                     return HealthReport(HealthStatus.NEEDS_LOGIN, "页面延迟跳转到登录态")
                 return HealthReport(HealthStatus.BROKEN, "创作中心页面结构不符（选择器待校准）")
 
@@ -56,7 +59,9 @@ class BilibiliColumnAdapter(PlaywrightBase):
             for item in page.locator(SEL_TREND_ITEM).all():
                 title = item.locator(SEL_TREND_TITLE).inner_text().strip()
                 try:
-                    heat = float(item.locator(SEL_TREND_HEAT).inner_text().strip().replace(",", ""))
+                    heat = float(
+                        item.locator(SEL_TREND_HEAT).inner_text().strip().replace(",", "").replace("，", "")
+                    )
                 except ValueError:
                     heat = 0.0
                 trends.append(Trend(title=title, heat=heat))
@@ -75,11 +80,11 @@ class BilibiliColumnAdapter(PlaywrightBase):
             with self.browser_page() as page:
                 try:
                     page.goto(PUBLISH_URL, wait_until="domcontentloaded")
-                    if "passport.bilibili.com" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                    if self._logged_out(page):
                         return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
                                              detail="发布页处于未登录状态，请重新 login")
                     if post.images:
-                        page.locator(SEL_COVER_UPLOAD).first.set_input_files(post.images[0])
+                        page.locator(SEL_COVER_UPLOAD).first.set_input_files(post.images[0])  # 专栏单封面契约，多余图有意丢弃
                     page.locator(SEL_TITLE_INPUT).fill(post.title)
                     page.locator(SEL_CONTENT_INPUT).fill(post.body)
                     page.locator(SEL_SUBMIT).click()
@@ -87,7 +92,7 @@ class BilibiliColumnAdapter(PlaywrightBase):
                     cv_id = page.locator(SEL_SUCCESS).first.get_attribute("data-cv-id") or ""
                     return PublishResult(success=True, post_url=f"https://www.bilibili.com/read/{cv_id}")
                 except PlaywrightTimeoutError:
-                    if "passport.bilibili.com" in page.url or page.locator(SEL_LOGIN_MARKER).count() > 0:
+                    if self._logged_out(page):
                         return PublishResult(success=False, error=PublishError.LOGIN_EXPIRED,
                                              detail="发布过程中跳转到登录态")
                     return PublishResult(success=False, error=PublishError.SELECTOR_BROKEN,

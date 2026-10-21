@@ -16,7 +16,6 @@ class EmbeddingConfig:
     base_url: str
     api_key: str
     model: str
-    dims: int
 
 
 @dataclass(frozen=True)
@@ -47,7 +46,7 @@ def load_config(path: str | Path = "config.toml") -> AppConfig:
     browser = raw.get("browser", {})
     return AppConfig(
         llm=LLMConfig(llm["base_url"], llm["api_key"], llm["model"]) if llm else None,
-        embedding=EmbeddingConfig(emb["base_url"], emb["api_key"], emb["model"], int(emb.get("dims", 1024))) if emb else None,
+        embedding=EmbeddingConfig(emb["base_url"], emb["api_key"], emb["model"]) if emb else None,
         image=ImageConfig(img["base_url"], img["api_key"], img["model"]) if img else None,
         headless=bool(browser.get("headless", False)),
     )

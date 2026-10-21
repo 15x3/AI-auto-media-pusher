@@ -67,7 +67,7 @@ def test_embedder_returns_vectors():
             {"index": 0, "embedding": [0.1, 0.3]},
         ]})
 
-    cfg = EmbeddingConfig("https://api.example.com/v1", "k", "embedding-3", 2)
+    cfg = EmbeddingConfig("https://api.example.com/v1", "k", "embedding-3")
     client = OpenAIEmbedder(cfg, transport=httpx.MockTransport(handler))
     vecs = client.embed(["文本一", "文本二"])
     assert vecs == [[0.1, 0.3], [0.2, 0.4]]   # 按 index 排序还原
@@ -127,7 +127,7 @@ def test_connect_timeout_configured():
     idle = httpx.MockTransport(lambda request: httpx.Response(200))
     for cls, cfg in [
         (OpenAIChatClient, LLMConfig("https://x", "k", "m")),
-        (OpenAIEmbedder, EmbeddingConfig("https://x", "k", "m", 8)),
+        (OpenAIEmbedder, EmbeddingConfig("https://x", "k", "m")),
         (OpenAIImageClient, ImageConfig("https://x", "k", "m")),
     ]:
         client = cls(cfg, transport=idle)
@@ -189,7 +189,7 @@ def test_malformed_embedding_shape_wrapped():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"error": "x"})
 
-    client = OpenAIEmbedder(EmbeddingConfig("https://api.example.com/v1", "k", "m", 8),
+    client = OpenAIEmbedder(EmbeddingConfig("https://api.example.com/v1", "k", "m"),
                             transport=httpx.MockTransport(handler))
     with pytest.raises(RuntimeError, match="形状异常"):
         client.embed(["文本"])

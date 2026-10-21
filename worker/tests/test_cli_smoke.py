@@ -48,7 +48,7 @@ def test_cli_approve_failure_reports_real_status_and_exits_nonzero(tmp_path, mon
     monkeypatch.chdir(tmp_path)
     registry = AdapterRegistry()
     registry.register(_FailPublish())
-    monkeypatch.setattr(cli, "load_adapters", lambda: registry)
+    monkeypatch.setattr(cli, "load_adapters", lambda *a, **k: registry)  # 同步：装配层现在传 builder
 
     cli.main(["run", "failpub"])
     draft_id = capsys.readouterr().out.split("draft_id=")[1].split()[0]

@@ -1,34 +1,69 @@
-"""CLI 入口：无 Electron 独立运行（python -m worker ...）。"""
+"""CLI 入口：无 Electron 独立运行（python -m worker ...）。
+
+有 config.toml → 真实客户端（LLM/Embedding/文生图/浏览器适配器）；
+无 → 回退桩与 demo 平台，并打印配置提示。
+"""
 import argparse
+import sys
+from pathlib import Path
 
 from .adapters.base import load_adapters
+from .config import load_config
 from .llm.client import StubEmbedder, StubLLM
+from .llm.openai_compat import OpenAIChatClient, OpenAIEmbedder, OpenAIImageClient
 from .memory.store import connect
 from .pipeline import Pipeline
 
 
-def _pipeline(db: str) -> Pipeline:
+def _load_config_if_any(config_path: str | None):
+    for path in [config_path] if config_path else ["config.toml"]:
+        if path and Path(path).exists():
+            return load_config(path)
+    return None
+
+
+def _browser_builder(cfg):
+    def builder(cls):
+        # 浏览器适配器注入会话参数；非浏览器适配器（如 demo）不接受这些 kwargs，回退无参构造
+        if cfg is not None:
+            try:
+                return cls(headless=cfg.headless, profiles_root=cfg.profiles_root)
+            except TypeError:
+                pass
+        return cls()
+
+    return builder
+
+
+def _pipeline(db: str, config_path: str | None = None) -> Pipeline:
+    cfg = _load_config_if_any(config_path)
+    registry = load_adapters(builder=_browser_builder(cfg))
+    if cfg and cfg.llm:
+        llm = OpenAIChatClient(cfg.llm)
+        embedder = OpenAIEmbedder(cfg.embedding) if cfg.embedding else StubEmbedder()
+        image_client = OpenAIImageClient(cfg.image) if cfg.image else None
+    else:
+        llm, embedder, image_client = StubLLM(), StubEmbedder(), None
+
     return Pipeline(
-        registry=load_adapters(),
-        llm=StubLLM(),
-        embedder=StubEmbedder(),
+        registry=registry,
+        llm=llm,
+        embedder=embedder,
         con=connect(db),
+        image_client=image_client,
+        images_root=cfg.images_root if cfg else Path("data/images"),
     )
-
-
-def _normalize(text: str | None) -> str | None:
-    """空串/纯空白视为未提供（None）——避免「幻影编辑」：L3 降权但内容实际未变。"""
-    if text is None:
-        return None
-    return text.strip() or None
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="worker", description="AI 社媒自动化 Worker（CLI 模式）")
     parser.add_argument("--db", default="agent.db", help="SQLite 数据库路径")
+    parser.add_argument("--config", default=None, help="config.toml 路径（缺省查找工作目录）")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("adapters", help="列出已注册适配器")
+    login_p = sub.add_parser("login", help="打开浏览器扫码登录平台")
+    login_p.add_argument("platform")
     run_p = sub.add_parser("run", help="跑一轮流水线（到待审草稿）")
     run_p.add_argument("platform")
     approve_p = sub.add_parser("approve", help="审核通过并发布")
@@ -45,15 +80,34 @@ def main(argv: list[str] | None = None) -> None:
             print(f"{pid}\t{adapter.display_name}")
         return
 
-    pipe = _pipeline(args.db)
+    if args.cmd == "login":
+        cfg = _load_config_if_any(args.config)
+        adapter = load_adapters(builder=_browser_builder(cfg)).get(args.platform)
+        if not hasattr(adapter, "login"):
+            print(f"平台 {args.platform} 不需要登录（无 login 方法）")
+            return
+        try:
+            report = adapter.login()
+        finally:
+            adapter.close()  # 决策 #20：playwright 无 atexit 钩子，必须显式关闭
+        print(f"platform={args.platform} status={report.status.value} detail={report.detail}")
+        if report.status.value != "ok":
+            raise SystemExit(1)
+        return
+
+    pipe = _pipeline(args.db, args.config)
     if args.cmd == "run":
-        draft = pipe.run(platform_id=args.platform)
+        try:
+            draft = pipe.run(platform_id=args.platform)
+        except RuntimeError as exc:  # 决策 #26⑥：AI/网络类失败的友好错误
+            print(f"运行失败: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
         print(f"draft_id={draft.draft_id} status={draft.status} platform={draft.platform}")
         print(f"title={draft.title}")
+        if draft.images and draft.images[0].startswith("cover-stub:"):
+            print("hint=桩模式——复制 config.example.toml 为 config.toml 并填入 key 以启用真实 LLM/文生图")
     elif args.cmd == "approve":
-        result = pipe.approve(
-            args.draft_id, edited_title=_normalize(args.title), edited_body=_normalize(args.body)
-        )
+        result = pipe.approve(args.draft_id, edited_title=args.title, edited_body=args.body)
         status = pipe.drafts[args.draft_id].status
         print(f"status={status} success={result.success} url={result.post_url} error={result.error}")
         if not result.success:
