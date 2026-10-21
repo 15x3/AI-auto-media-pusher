@@ -51,6 +51,7 @@ class Pipeline:
     ) -> None:
         self.registry = registry
         self.llm = llm
+        self.embedder = embedder
         self.agent = AgentMemory(con, agent_id)
         self.global_mem = GlobalMemory(con, embedder)
         self._con = con

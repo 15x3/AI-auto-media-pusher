@@ -16,18 +16,24 @@ from .pipeline import Pipeline
 
 
 def _load_config_if_any(config_path: str | None):
-    for path in [config_path] if config_path else ["config.toml"]:
-        if path and Path(path).exists():
-            return load_config(path)
+    if config_path is not None:
+        if not Path(config_path).exists():
+            raise FileNotFoundError(
+                f"--config 指定的文件不存在: {config_path}（检查路径或省略 --config 以查找工作目录 config.toml）"
+            )
+        return load_config(config_path)
+    if Path("config.toml").exists():  # 缺省查找：不存在时回退桩模式
+        return load_config("config.toml")
     return None
 
 
-def _browser_builder(cfg):
+def _browser_builder(cfg, headless_override: bool | None = None):
     def builder(cls):
         # 浏览器适配器注入会话参数；非浏览器适配器（如 demo）不接受这些 kwargs，回退无参构造
         if cfg is not None:
+            headless = headless_override if headless_override is not None else cfg.headless
             try:
-                return cls(headless=cfg.headless, profiles_root=cfg.profiles_root)
+                return cls(headless=headless, profiles_root=cfg.profiles_root)
             except TypeError:
                 pass
         return cls()
@@ -82,7 +88,13 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.cmd == "login":
         cfg = _load_config_if_any(args.config)
-        adapter = load_adapters(builder=_browser_builder(cfg)).get(args.platform)
+        try:
+            adapter = load_adapters(
+                builder=_browser_builder(cfg, headless_override=False)  # login 需扫码，强制可见浏览器
+            ).get(args.platform)
+        except KeyError as exc:
+            print(f"未知平台: {args.platform}（python -m worker adapters 查看已注册平台）", file=sys.stderr)
+            raise SystemExit(1) from exc
         if not hasattr(adapter, "login"):
             print(f"平台 {args.platform} 不需要登录（无 login 方法）")
             return
@@ -95,23 +107,31 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(1)
         return
 
-    pipe = _pipeline(args.db, args.config)
     if args.cmd == "run":
         try:
+            pipe = _pipeline(args.db, args.config)
             draft = pipe.run(platform_id=args.platform)
-        except RuntimeError as exc:  # 决策 #26⑥：AI/网络类失败的友好错误
+        except KeyError as exc:
+            print(f"未知平台: {args.platform}（python -m worker adapters 查看已注册平台）", file=sys.stderr)
+            raise SystemExit(1) from exc
+        except RuntimeError as exc:  # 决策 #26⑥：AI/网络类失败的友好错误（含构造期 embedding 探测）
             print(f"运行失败: {exc}", file=sys.stderr)
             raise SystemExit(1) from exc
         print(f"draft_id={draft.draft_id} status={draft.status} platform={draft.platform}")
         print(f"title={draft.title}")
         if draft.images and draft.images[0].startswith("cover-stub:"):
-            print("hint=桩模式——复制 config.example.toml 为 config.toml 并填入 key 以启用真实 LLM/文生图")
+            if _load_config_if_any(args.config) is None:
+                print("hint=桩模式——复制 config.example.toml 为 config.toml 并填入 key 以启用真实 LLM/文生图")
+            else:
+                print("hint=未配置 [image] 段，封面为占位符")
     elif args.cmd == "approve":
+        pipe = _pipeline(args.db, args.config)
         result = pipe.approve(args.draft_id, edited_title=args.title, edited_body=args.body)
         status = pipe.drafts[args.draft_id].status
         print(f"status={status} success={result.success} url={result.post_url} error={result.error}")
         if not result.success:
             raise SystemExit(1)
     elif args.cmd == "reject":
+        pipe = _pipeline(args.db, args.config)
         pipe.reject(args.draft_id, reason=args.reason)
         print("status=rejected")
