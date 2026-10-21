@@ -1951,3 +1951,7 @@ git commit -m "feat(worker): CLI 真实装配/login 命令/使用文档"
 ## 后续计划
 
 - **计划 3**：Electron 主进程（Worker 守护 + JSON-RPC IPC）与 React UI（仪表盘/主题系统/轨道时钟/草稿箱）——届时消化决策 #14/#15 与 draft 存态决策 #11
+
+### 计划 2 执行中补充决策
+
+16. **GlobalMemory 维度自动推断**（P2T1 审查发现）：`EmbeddingConfig.dims` 在原计划中是只写字段，而 `GlobalMemory(con, embedder)` 默认 `dims=8`——真实 embedding（如 2048 维）接入时会撞计划 1 的构造期哨兵探测直接 ValueError。**Task 9 一并修改**：`GlobalMemory.__init__` 的 `dims` 参数改为 `int | None = None`，None 时以哨兵探测长度自动建表；显式传入时仍与探测值校验（mismatch 抛 ValueError，既有测试语义不变）。真实装配链由此自然工作：`Pipeline(con=..., embedder=OpenAIEmbedder(...))` → 探测 2048 → `float[2048]`。
