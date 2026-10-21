@@ -4,9 +4,9 @@ import json
 import httpx
 import pytest
 
-from worker.config import EmbeddingConfig, LLMConfig
+from worker.config import EmbeddingConfig, ImageConfig, LLMConfig
 from worker.llm import openai_compat
-from worker.llm.openai_compat import OpenAIChatClient, OpenAIEmbedder
+from worker.llm.openai_compat import OpenAIChatClient, OpenAIEmbedder, OpenAIImageClient
 
 
 def test_chat_complete_posts_and_parses():
@@ -84,9 +84,6 @@ def test_image_client_writes_png(tmp_path):
         assert body["size"] == "768x1024"   # 3:4 竖版封面
         return httpx.Response(200, json={"data": [{"b64_json": base64.b64encode(png_bytes).decode()}]})
 
-    from worker.config import ImageConfig
-    from worker.llm.openai_compat import OpenAIImageClient
-
     client = OpenAIImageClient(ImageConfig("https://api.example.com/v1", "k", "cogview-4"),
                                transport=httpx.MockTransport(handler))
     out = tmp_path / "imgs" / "d1" / "cover.png"
@@ -127,8 +124,6 @@ def test_non_json_200_wrapped_as_runtime_error():
 
 def test_connect_timeout_configured():
     """决策 #17：timeout 元组化，connect=10。注入 MockTransport 避免真实 SSL 初始化开销。"""
-    from worker.config import ImageConfig
-    from worker.llm.openai_compat import OpenAIChatClient, OpenAIEmbedder, OpenAIImageClient
     idle = httpx.MockTransport(lambda request: httpx.Response(200))
     for cls, cfg in [
         (OpenAIChatClient, LLMConfig("https://x", "k", "m")),
@@ -137,3 +132,74 @@ def test_connect_timeout_configured():
     ]:
         client = cls(cfg, transport=idle)
         assert client._client.timeout.connect == 10
+
+
+def test_retry_429_caps_retry_after_at_30s(monkeypatch):
+    """审查 Important #1：恶意/配置错误的超长 Retry-After 不得令 CLI 假死，封顶 30s。"""
+    import worker.llm.openai_compat as mod
+
+    sleeps = []
+    monkeypatch.setattr(mod.time, "sleep", lambda s: sleeps.append(s))
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "3600"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    client = mod.OpenAIChatClient(LLMConfig("https://api.example.com/v1", "k", "m"),
+                                  transport=httpx.MockTransport(handler))
+    assert client.complete("s", "u") == "ok"
+    assert sleeps == [30.0]      # 3600 被封顶为 30
+
+
+def test_retry_non_numeric_retry_after_falls_back_to_backoff(monkeypatch):
+    """锚定：非数字 Retry-After（如 HTTP-date）回退指数退避。"""
+    import worker.llm.openai_compat as mod
+
+    sleeps = []
+    monkeypatch.setattr(mod.time, "sleep", lambda s: sleeps.append(s))
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    client = mod.OpenAIChatClient(LLMConfig("https://api.example.com/v1", "k", "m"),
+                                  transport=httpx.MockTransport(handler))
+    assert client.complete("s", "u") == "ok"
+    assert sleeps == [0.5]       # 首轮指数退避 0.5 * 2**0
+
+
+def test_malformed_chat_shape_wrapped():
+    """审查 Important #2：200 + 合法 JSON 但形状不符 → RuntimeError 而非裸 KeyError。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"error": "x"})
+
+    client = OpenAIChatClient(LLMConfig("https://api.example.com/v1", "k", "m"),
+                              transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="形状异常"):
+        client.complete("s", "u")
+
+
+def test_malformed_embedding_shape_wrapped():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"error": "x"})
+
+    client = OpenAIEmbedder(EmbeddingConfig("https://api.example.com/v1", "k", "m", 8),
+                            transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="形状异常"):
+        client.embed(["文本"])
+
+
+def test_malformed_image_shape_wrapped(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"error": "x"})
+
+    client = OpenAIImageClient(ImageConfig("https://api.example.com/v1", "k", "m"),
+                               transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="形状异常"):
+        client.generate(prompt="p", out_path=tmp_path / "cover.png")

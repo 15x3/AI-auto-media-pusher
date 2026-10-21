@@ -1,4 +1,5 @@
 """OpenAI 兼容 API 客户端：chat / embeddings / images。transport 可注入供测试。"""
+import base64
 import time
 from pathlib import Path
 
@@ -16,10 +17,10 @@ def _post_with_retry(client: httpx.Client, url: str, payload: dict, what: str) -
             resp = client.post(url, json=payload)
             if resp.status_code == 429 or resp.status_code >= 500:
                 retry_after = resp.headers.get("Retry-After")
-                last_exc = RuntimeError(f"{what} 服务端错误 {resp.status_code}")
+                last_exc = RuntimeError(f"{what} 限流/服务端错误 {resp.status_code}")
                 if attempt < MAX_RETRIES:
                     if retry_after is not None and str(retry_after).isdigit():
-                        time.sleep(float(retry_after))
+                        time.sleep(min(float(retry_after), 30.0))
                     else:
                         time.sleep(0.5 * (2**attempt))
                 continue
@@ -62,7 +63,10 @@ class OpenAIChatClient:
             },
             "chat/completions",
         )
-        return data["choices"][0]["message"]["content"]
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"chat/completions 响应形状异常: {str(data)[:200]}") from exc
 
 
 class OpenAIEmbedder:
@@ -84,8 +88,11 @@ class OpenAIEmbedder:
             {"model": self._cfg.model, "input": texts},
             "embeddings",
         )
-        by_index = {item["index"]: item["embedding"] for item in data["data"]}
-        return [by_index[i] for i in range(len(texts))]
+        try:
+            by_index = {item["index"]: item["embedding"] for item in data["data"]}
+            return [by_index[i] for i in range(len(texts))]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"embeddings 响应形状异常: {str(data)[:200]}") from exc
 
 
 class OpenAIImageClient:
@@ -101,15 +108,16 @@ class OpenAIImageClient:
         )
 
     def generate(self, prompt: str, out_path: Path) -> Path:
-        import base64 as _b64
-
         data = _post_with_retry(
             self._client,
             "/images/generations",
             {"model": self._cfg.model, "prompt": prompt, "size": "768x1024", "response_format": "b64_json"},
             "images/generations",
         )
-        raw = _b64.b64decode(data["data"][0]["b64_json"])
+        try:
+            raw = base64.b64decode(data["data"][0]["b64_json"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(f"images/generations 响应形状异常: {str(data)[:200]}") from exc
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(raw)
         return out_path
