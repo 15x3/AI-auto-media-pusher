@@ -1968,3 +1968,5 @@ git commit -m "feat(worker): CLI 真实装配/login 命令/使用文档"
 
 23. **tags 死数据与模板化风控**（P2T7 审查，校准期待办）：compose_post 的 tags=["AI","自动化"] 恒定硬编码且 execute_publish 从未使用（.tag_container 无选择器）——真实小红书标签是正文里的 #话题 文本，当前真实发布零标签且恒定 tags 有模板化风控信号。校准时：compose 把 #tag 追加进 body（注意截断后追加可能超限）或交互标签 UI，值改由配置/内容生成。
 24. **环境异常分类语义**（P2T7 修复落地）：浏览器崩溃/断网等非超时异常归 SELECTOR_BROKEN（detail 前缀"环境异常"，待维护语义）；PLATFORM_REJECTED 保留给真实平台内容拒绝，校准期接入检测。Task 8 的 B站适配器复制此模式。
+
+25. **Task 10 收尾清理清单**（P2T8 审查 Minor）：① 删除死 fixture `bili_publish_success.html`（无测试引用，成功判定走注入 toast）；② 两适配器各抽文件内私有谓词 `_logged_out(page)`（登录判定 4 处重复，校准时漏改即误分类——不做跨适配器基类抽象，平台 URL 判定本不同构）；③ bili fetch_trends 补全角逗号剥离 `.replace("，", "")`；④ bili `post.images[0]` 行加注释"专栏单封面契约，多余图有意丢弃"。
