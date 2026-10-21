@@ -1955,3 +1955,5 @@ git commit -m "feat(worker): CLI 真实装配/login 命令/使用文档"
 ### 计划 2 执行中补充决策
 
 16. **GlobalMemory 维度自动推断**（P2T1 审查发现）：`EmbeddingConfig.dims` 在原计划中是只写字段，而 `GlobalMemory(con, embedder)` 默认 `dims=8`——真实 embedding（如 2048 维）接入时会撞计划 1 的构造期哨兵探测直接 ValueError。**Task 9 一并修改**：`GlobalMemory.__init__` 的 `dims` 参数改为 `int | None = None`，None 时以哨兵探测长度自动建表；显式传入时仍与探测值校验（mismatch 抛 ValueError，既有测试语义不变）。真实装配链由此自然工作：`Pipeline(con=..., embedder=OpenAIEmbedder(...))` → 探测 2048 → `float[2048]`。
+
+17. **429 重试与超时/解析加固**（P2T3 审查，Task 4 一并落地）：`_post_with_retry` 的重试条件从 `>=500` 扩为 `==429 或 >=500`，429 时尊重 `Retry-After` 头（有则 sleep 该秒数，无则指数退避）；三处客户端 timeout 改 `httpx.Timeout(<总>, connect=10)`；`resp.json()` 与键提取的解析异常包装为 RuntimeError（网关 200 返回 HTML 时的统一错误面）。补测试：429→Retry-After→成功。
