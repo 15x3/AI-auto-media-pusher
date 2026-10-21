@@ -100,7 +100,7 @@ class AdapterRegistry:
 
 def load_adapters(
     package: str = "worker.adapters",
-    builder: "Callable[[type[PlatformAdapter]], PlatformAdapter] | None" = None,
+    builder: Callable[[type[PlatformAdapter]], PlatformAdapter] | None = None,
 ) -> "AdapterRegistry":
     """扫描适配器包目录，放即注册：凡继承 PlatformAdapter 且声明 platform_id 的具体类自动进入注册表。
 
@@ -129,5 +129,5 @@ def load_adapters(
             for cls in candidates:
                 registry.register(cls() if builder is None else builder(cls))
         except Exception as exc:  # noqa: BLE001 - 单模块失败不拖垮扫描
-            print(f"[adapters] 模块 {package}.{mod_info.name} 加载失败，已跳过: {exc}", file=sys.stderr)
+            print(f"[adapters] 模块 {package}.{mod_info.name} 加载/构造失败，已跳过: {exc}", file=sys.stderr)
     return registry
