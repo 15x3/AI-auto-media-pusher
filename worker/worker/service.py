@@ -18,10 +18,27 @@ def _draft_row(row) -> dict:
 def build_service(registry, pipeline, real_mode: bool, has_image: bool = False,
                   has_embedding: bool = False) -> RpcServer:
     server = RpcServer()
+    # run/approve/reject 共用一把锁串行化变更型操作：防并发 run 算出相同 draft_id 互相覆盖，
+    # 也关闭 approve/reject 与 run 在共享 sqlite 连接上的跨线程事务交错窗口
+    state_lock = asyncio.Lock()
 
     async def _run(fn, *args):
         # Playwright/LLM 都是阻塞调用——在协程内取运行环卸载到执行器（3.12 禁在无运行环处 get_event_loop）
         return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+
+    def _platform(params) -> str:
+        pid = params.get("platform")
+        if not pid:
+            raise ValueError("缺少参数: platform")
+        if pid not in registry.all():
+            raise ValueError(f"未知平台: {pid}（python -m worker adapters 查看已注册平台）")
+        return pid
+
+    def _draft_id(params) -> str:
+        draft_id = params.get("draft_id")
+        if not draft_id:
+            raise ValueError("缺少参数: draft_id")
+        return draft_id
 
     @server.method("adapters")
     async def adapters(params):
@@ -29,17 +46,19 @@ def build_service(registry, pipeline, real_mode: bool, has_image: bool = False,
 
     @server.method("health")
     async def health(params):
-        report = await _run(registry.get(params["platform"]).check_health)
+        report = await _run(registry.get(_platform(params)).check_health)
         return {"status": report.status.value, "detail": report.detail}
 
     @server.method("run")
     async def run(params):
-        await server.broadcast("stage_changed", {"stage": "research", "platform": params["platform"]})
-        draft = await _run(pipeline.run, params["platform"])
-        await server.broadcast("drafts_changed", {"draft_id": draft.draft_id})
-        return {"draft_id": draft.draft_id, "platform": draft.platform,
-                "title": draft.title, "body": draft.body,
-                "images": draft.images, "status": draft.status}
+        async with state_lock:
+            pid = _platform(params)
+            await server.broadcast("stage_changed", {"stage": "research", "platform": pid})
+            draft = await _run(pipeline.run, pid)
+            await server.broadcast("drafts_changed", {"draft_id": draft.draft_id})
+            return {"draft_id": draft.draft_id, "platform": draft.platform,
+                    "title": draft.title, "body": draft.body,
+                    "images": draft.images, "status": draft.status}
 
     @server.method("drafts")
     async def drafts(params):
@@ -51,19 +70,24 @@ def build_service(registry, pipeline, real_mode: bool, has_image: bool = False,
 
     @server.method("approve")
     async def approve(params):
-        result = await _run(
-            pipeline.approve, params["draft_id"],
-            params.get("title"), params.get("body"),
-        )
-        await server.broadcast("drafts_changed", {"draft_id": params["draft_id"]})
-        return {"success": result.success, "post_url": result.post_url,
-                "error": result.error.value if result.error else None, "detail": result.detail}
+        async with state_lock:
+            draft_id = _draft_id(params)
+            result = await _run(
+                pipeline.approve, draft_id,
+                params.get("title"), params.get("body"),
+            )
+            await server.broadcast("drafts_changed", {"draft_id": draft_id})
+            return {"success": result.success, "post_url": result.post_url,
+                    "error": result.error.value if result.error else None, "detail": result.detail}
 
     @server.method("reject")
     async def reject(params):
-        await _run(pipeline.reject, params["draft_id"], params["reason"])
-        await server.broadcast("drafts_changed", {"draft_id": params["draft_id"]})
-        return {}
+        async with state_lock:
+            draft_id = _draft_id(params)
+            # 空理由交给 Pipeline 规整为「(未填理由)」，与 CLI 行为一致
+            await _run(pipeline.reject, draft_id, params.get("reason") or "")
+            await server.broadcast("drafts_changed", {"draft_id": draft_id})
+            return {}
 
     @server.method("memory_stats")
     async def memory_stats(params):

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 import websockets
 
@@ -79,3 +80,45 @@ async def test_service_broadcasts_on_run(tmp_path):
                 elif msg.get("id") == 1:
                     continue
     assert "stage_changed" in events and "drafts_changed" in events
+
+
+async def test_concurrent_runs_are_serialized(tmp_path):
+    """两个客户端几乎同时 run：必须串行化——draft_id 互不相同且无覆盖。
+
+    同连接的请求本就被 RpcServer._handle 逐条 await 串行处理，重入窗口在跨连接处；
+    SlowLLM 放大无锁时两个执行器线程的重叠（竞态→算出同一 draft_id 互相覆盖）。
+    """
+    con = connect(tmp_path / "b.db")
+    registry = AdapterRegistry()
+    registry.register(DemoAdapter(out_file=tmp_path / "demo_published.json"))
+
+    class SlowLLM(StubLLM):
+        def complete(self, system: str, user: str) -> str:
+            time.sleep(0.05)
+            return super().complete(system, user)
+
+    pipeline = Pipeline(registry=registry, llm=SlowLLM(), embedder=StubEmbedder(), con=con, agent_id="ui")
+    server = build_service(registry=registry, pipeline=pipeline, real_mode=False)
+
+    async def _recv_result(ws, mid):
+        while True:
+            msg = json.loads(await ws.recv())
+            if msg.get("id") == mid:
+                return msg["result"]["draft_id"]
+
+    async with server.start():
+        async with websockets.connect(server.url) as ws1, websockets.connect(server.url) as ws2:
+            await ws1.send(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "run", "params": {"platform": "demo"}}))
+            await ws2.send(json.dumps({"jsonrpc": "2.0", "id": 2, "method": "run", "params": {"platform": "demo"}}))
+            id1, id2 = await asyncio.gather(_recv_result(ws1, 1), _recv_result(ws2, 2))
+            assert id1 != id2
+            drafts = (await _call(ws1, "drafts"))["result"]
+            assert len(drafts) == 2
+
+
+async def test_health_unknown_platform_friendly_error(tmp_path):
+    server = make_service(tmp_path)
+    async with server.start():
+        async with websockets.connect(server.url) as ws:
+            resp = await _call(ws, "health", {"platform": "weibo"})
+            assert "未知平台" in resp["error"]
