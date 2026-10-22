@@ -9,6 +9,7 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [mem, setMem] = useState({ l2_prefs: 0, l3_posts: 0 });
   const [health, setHealth] = useState<Record<string, { status: string; detail: string }>>({});
+  const [runError, setRunError] = useState("");
 
   const refresh = useCallback(() => {
     api.drafts().then(setDrafts).catch(() => {});
@@ -22,8 +23,6 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
     // 决策 #31：onEvent 返回退订函数，effect 清理时注销
     return api.onEvent((method) => {
       if (method === "drafts_changed") refresh();
-      // 决策 #27 双保险：流水线阶段事件到达即退出运行态（promise 结算之外的兜底）
-      if (method === "stage_changed") setRunning(false);
     });
   }, [refresh, api, setRunning]);
 
@@ -31,7 +30,10 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const startRun = () => {
     if (!adapters[0] || running) return;
     setRunning(true);
-    api.run(adapters[0].platform_id).catch(() => {}).finally(() => setRunning(false));
+    setRunError("");
+    api.run(adapters[0].platform_id)
+      .catch((e) => setRunError(String(e?.message ?? e)))   // T8 审查 Minor #3：失败不静默
+      .finally(() => setRunning(false));
   };
 
   const pending = drafts.filter((d) => d.status === "pending_review");
@@ -49,6 +51,9 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
             </button>
           )}
         </div>
+        {(running || runError) && (
+          <div style={{ color: "var(--c-warn)", marginTop: 4 }}>{runError || "运行中…"}</div>
+        )}
       </Card>
       <Card title="流水线状态" note={`共 ${drafts.length} 稿`}>
         <div>

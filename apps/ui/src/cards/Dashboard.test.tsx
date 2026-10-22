@@ -62,3 +62,40 @@ test("决策 #27：点击立即调研进入共享运行态（按钮禁用/运行
   await act(async () => { resolveRun(drafts[0]); });
   await waitFor(() => expect(screen.getByRole("button", { name: /立即调研/ })).toBeEnabled());
 });
+
+test("规格审查修正：stage_changed 不清除运行态（service 在 run 开始即广播，仅 finally 复位）", async () => {
+  const api = makeApi();
+  let resolveRun!: (v: unknown) => void;
+  api.run.mockImplementation(() => new Promise((r) => { resolveRun = r; }));
+  let emit!: (m: string, p?: any) => void;
+  api.onEvent = vi.fn((cb: any) => { emit = cb; return () => {}; });
+  render(
+    <WorkerProvider apiForTest={api as any}>
+      <Dashboard onOpenDrafts={() => {}} />
+    </WorkerProvider>,
+  );
+  const btn = await screen.findByRole("button", { name: /立即调研/ });
+  await act(async () => { fireEvent.click(btn); });
+
+  // run 仍在进行中，即使收到 stage_changed 广播也必须保持运行态（否则按钮提前恢复）
+  act(() => { emit("stage_changed", { stage: "research" }); });
+  expect(screen.getByRole("button", { name: /运行中/ })).toBeDisabled();
+
+  await act(async () => { resolveRun(drafts[0]); });
+  await waitFor(() => expect(screen.getByRole("button", { name: /立即调研/ })).toBeEnabled());
+});
+
+test("T8 审查 Minor #3：run 失败显示错误文案且不再静默", async () => {
+  const api = makeApi();
+  api.run.mockRejectedValue(new Error("worker 连接失败"));
+  render(
+    <WorkerProvider apiForTest={api as any}>
+      <Dashboard onOpenDrafts={() => {}} />
+    </WorkerProvider>,
+  );
+  const btn = await screen.findByRole("button", { name: /立即调研/ });
+  await act(async () => { fireEvent.click(btn); });
+  expect(await screen.findByText("worker 连接失败")).toBeInTheDocument();
+  // finally 复位运行态，可重试
+  await waitFor(() => expect(screen.getByRole("button", { name: /立即调研/ })).toBeEnabled());
+});
