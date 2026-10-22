@@ -70,6 +70,9 @@ export function DraftsPage({ onBack }: { onBack: () => void }) {
             <>
               <input placeholder="驳回理由（写入 Agent 记忆）" value={reason}
                      onChange={(e) => setReason(e.target.value)} />
+              {running && (
+                <div style={{ color: "var(--c-warn)", marginBottom: 4 }}>⏳ 流水线运行中，审核操作已暂停…</div>
+              )}
               <div className="draft-actions">
                 <button className="btn-ok" onClick={approve} disabled={running}>✓ 通过并发布</button>
                 <button className="btn-no" onClick={reject} disabled={running}>✗ 驳回</button>

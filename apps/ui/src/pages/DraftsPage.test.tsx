@@ -77,6 +77,25 @@ test("决策 #27：running=true 时通过并发布/驳回按钮禁用（文案�
   expect(screen.getByRole("button", { name: /返回仪表盘/ })).toBeEnabled();
 });
 
+test("决策 #27 补充：running=true 时操作区上方显示运行中提示", async () => {
+  const api = makeApi();
+  function SetRunningProbe() {
+    const { setRunning } = useWorker();
+    return <button data-testid="flip" onClick={() => setRunning(true)}>flip</button>;
+  }
+  render(
+    <WorkerProvider apiForTest={api as any}>
+      <SetRunningProbe />
+      <DraftsPage onBack={() => {}} />
+    </WorkerProvider>,
+  );
+  expect(await screen.findByText("第二篇")).toBeInTheDocument();
+  expect(screen.queryByText(/流水线运行中/)).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByTestId("flip"));
+  expect(await screen.findByText("⏳ 流水线运行中，审核操作已暂停…")).toBeInTheDocument();
+});
+
 test("审查 Important #1：approve reject 时 flash 显示发布失败（不卡死在发布中）", async () => {
   const api = makeApi();
   api.approve.mockRejectedValue(new Error("draft d2 不存在"));

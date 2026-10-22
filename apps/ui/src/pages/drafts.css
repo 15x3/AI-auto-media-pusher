@@ -3,7 +3,7 @@
 .draft-item { border: 1px solid rgba(48,54,61,.7); border-radius: 8px; padding: 8px 10px; cursor: pointer;
   background: rgba(13,17,23,.5); }
 .draft-item.sel { border-color: color-mix(in srgb, var(--c-primary) 55%, transparent); }
-.draft-item .st-pending { color: var(--c-warn); } .draft-item .st-published { color: var(--c-ok); }
+.draft-item .st-pending_review { color: var(--c-warn); } .draft-item .st-published { color: var(--c-ok); }
 .draft-item .st-rejected { color: #6e768d; }
 .draft-editor { display: flex; flex-direction: column; gap: 8px; }
 .draft-editor input, .draft-editor textarea { background: rgba(13,17,23,.6); color: #e6edf3;

@@ -24,3 +24,16 @@ test("clock ticks angles and time text each second", () => {
   expect(orbit.style.getPropertyValue("--second-angle")).toBe("126deg");
   expect(screen.getByTestId("clock-time").textContent).toBe("15:49:21");
 });
+
+test("决策 #30：跨分钟回卷——59s→0s 秒角连续累积为 360deg 而非回卷 0deg", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 9, 21, 15, 49, 59)); // 15:49:59
+  render(<MiniClock />);
+  const orbit = screen.getByRole("img", { name: "当前时间" });
+  expect(orbit.style.getPropertyValue("--second-angle")).toBe("354deg"); // 59*6
+
+  act(() => {
+    vi.advanceTimersByTime(1000);
+  }); // 15:50:00
+  expect(orbit.style.getPropertyValue("--second-angle")).toBe("360deg"); // 0*6 + 1*360
+});

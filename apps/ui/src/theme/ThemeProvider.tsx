@@ -9,12 +9,16 @@ export const THEMES = [
   { id: "mono", label: "mono · 磷光" },
 ] as const;
 
-const ThemeCtx = createContext<{ theme: string; setTheme: (t: string) => void }>({
+export type ThemeId = (typeof THEMES)[number]["id"];
+
+const ThemeCtx = createContext<{ theme: ThemeId; setTheme: (t: ThemeId) => void }>({
   theme: "frost", setTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem("app-theme") ?? "frost");
+  const [theme, setTheme] = useState<ThemeId>(
+    () => (localStorage.getItem("app-theme") as ThemeId | null) ?? "frost",
+  );
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("app-theme", theme);

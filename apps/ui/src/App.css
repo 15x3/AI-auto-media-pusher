@@ -1,0 +1,11 @@
+.topbar { display: flex; align-items: center; gap: 12px; padding: 11px 16px;
+  border-bottom: 1px solid rgba(48,54,61,.5); background: rgba(8,12,20,.4); backdrop-filter: blur(10px); }
+.logo { font-family: var(--font-serif); font-weight: 600; font-size: 16px; letter-spacing: 3px;
+  background: linear-gradient(90deg, var(--c-primary), var(--c-secondary) 55%, var(--c-accent));
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.topbar .spacer { flex: 1; }
+.health-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.theme-chips { display: flex; gap: 6px; padding: 0 16px 10px; }
+.chip { font-family: var(--font-mono); font-size: 10.5px; padding: 3px 12px; border-radius: 14px;
+  border: 1px solid #30363d; color: #8b949e; cursor: pointer; background: rgba(13,17,23,.6); }
+.chip.on { border-color: var(--c-primary); color: #e6edf3; box-shadow: 0 0 10px color-mix(in srgb, var(--c-primary) 30%, transparent); }

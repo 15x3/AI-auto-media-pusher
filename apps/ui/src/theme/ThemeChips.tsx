@@ -5,7 +5,8 @@ export function ThemeChips() {
   return (
     <div className="theme-chips">
       {THEMES.map((t) => (
-        <button key={t.id} className={`chip${theme === t.id ? " on" : ""}`} onClick={() => setTheme(t.id)}>
+        <button key={t.id} className={`chip${theme === t.id ? " on" : ""}`} aria-pressed={theme === t.id}
+                onClick={() => setTheme(t.id)}>
           {t.id}
         </button>
       ))}
