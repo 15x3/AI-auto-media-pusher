@@ -1734,3 +1734,5 @@ git commit -m "feat: 打包配置与项目 README——计划 3 收尾"
 29. **workerClient 断连语义**（P3T3 审查 Important，Task 7 落地）：ws close/error 后挂起请求会各挂 300s、新请求静默丢弃。修法：`close` 事件 → reject 全部 pending（"worker 连接已断开"）+ `connected` 守卫（send 前检查 readyState）；UI 数据层消费该错误显示"worker 已断开，请重启应用"。
 
 30. **秒针回卷与相位**（P3T6 审查，Task 10 顺手）：59s→0s 时 CSS 按数值插值反向扫过 354°（每分钟一次视觉闪跳）——MiniClock 秒角改连续累积（如 `s*6 + minutesElapsed*360` 或等价）即可；interval 相位未对齐秒边界属可接受记录项。
+
+31. **Task 7 实现被审查 supersede（P3T7 质量审查 Critical）**：计划 Task 7 的 WorkerProvider 代码块在组件体内 createApi()——api 引用每渲染变化 → setAdapters 触发的重渲形成自持请求循环（实证 400ms 2511 次 RPC；dev 直连另致 WebSocket 泄漏）。修复版：`useMemo(() => apiForTest ?? createApi(), [apiForTest])` + 无注入回归测试；同时落地——dev 直连 ws.onclose 镜像决策 #29（reject pending + ws 置空）；onEvent 签名改返回退订函数 `(cb) => () => void`（api.ts 与 preload.ts 同步，避免 Task 8/9 落地后破坏性变更）；onerror 包装 Error("无法连接 worker")；onEvent 首次注册触发 ensureWs；删除只写的 closed 字段；useWorker 对 null 抛说明性错误。以修复提交为准，计划代码块不再回抄。
