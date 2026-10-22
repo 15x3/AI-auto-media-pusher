@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg-base); color: #8b949e;
+  font-family: var(--font-mono); font-size: 12px; }
+
+.background-layer { position: fixed; inset: 0; z-index: -1; overflow: hidden; background: var(--bg-base); }
+.blob { position: absolute; width: 560px; height: 560px; border-radius: 50%; will-change: transform; }
+.blob.b1 { background: radial-gradient(circle, color-mix(in srgb, var(--c-primary) 17%, transparent), transparent 62%); animation: drift1 26s ease-in-out infinite alternate; }
+.blob.b2 { background: radial-gradient(circle, color-mix(in srgb, var(--c-secondary) 15%, transparent), transparent 62%); animation: drift2 34s ease-in-out infinite alternate; }
+.blob.b3 { background: radial-gradient(circle, color-mix(in srgb, var(--c-accent) 10%, transparent), transparent 60%); animation: drift3 29s ease-in-out infinite alternate; }
+@keyframes drift1 { from { transform: translate(-8%, -6%) scale(1); } to { transform: translate(16%, 10%) scale(1.22); } }
+@keyframes drift2 { from { transform: translate(70%, 55%) scale(1.15); } to { transform: translate(45%, 78%) scale(0.95); } }
+@keyframes drift3 { from { transform: translate(55%, -8%) scale(0.9); } to { transform: translate(75%, 18%) scale(1.18); } }
+@media (prefers-reduced-motion: reduce) { .blob { animation: none; } }
+.grid-overlay { position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(139,148,158,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139,148,158,.035) 1px, transparent 1px);
+  background-size: 28px 28px; }
