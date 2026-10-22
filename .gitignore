@@ -1,5 +1,8 @@
 .superpowers/
 .venv/
+node_modules/
+dist/
+*.tsbuildinfo
 __pycache__/
 *.pyc
 demo_published.json

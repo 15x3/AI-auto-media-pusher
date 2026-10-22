@@ -1,0 +1,12 @@
+{
+  "name": "ai-auto-media-pusher",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:ui": "npm run dev -w apps/ui",
+    "build:ui": "npm run build -w apps/ui",
+    "test": "npm test --workspaces --if-present",
+    "dev:desktop": "npm run dev -w apps/desktop",
+    "start": "npm run start -w apps/desktop"
+  }
+}
