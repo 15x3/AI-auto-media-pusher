@@ -1,0 +1,12 @@
+:root, [data-theme="ion"]   { --c-primary:#58a6ff; --c-secondary:#a378f7; --c-accent:#f778ba; --c-ok:#3fb950; --c-warn:#d29922; }
+[data-theme="matrix"] { --c-primary:#39d353; --c-secondary:#1f9c8a; --c-accent:#a5d6ff; --c-ok:#39d353; --c-warn:#e3b341; }
+[data-theme="ember"]  { --c-primary:#ff7b72; --c-secondary:#ffa657; --c-accent:#ffd166; --c-ok:#56d364; --c-warn:#e3b341; }
+[data-theme="synth"]  { --c-primary:#f778ba; --c-secondary:#a378f7; --c-accent:#58a6ff; --c-ok:#3fb950; --c-warn:#e3b341; }
+[data-theme="frost"]  { --c-primary:#39c5cf; --c-secondary:#58a6ff; --c-accent:#7ee7ff; --c-ok:#3fb950; --c-warn:#e3b341; }
+[data-theme="mono"]   { --c-primary:#c9d1d9; --c-secondary:#8b949e; --c-accent:#e6edf3; --c-ok:#3fb950; --c-warn:#e3b341; }
+
+:root {
+  --bg-base: #05070d;
+  --font-serif: "Noto Serif SC", "SimSun", "宋体", serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+}
