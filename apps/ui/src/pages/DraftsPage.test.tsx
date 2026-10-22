@@ -76,3 +76,31 @@ test("决策 #27：running=true 时通过并发布/驳回按钮禁用（文案�
   expect(screen.getByRole("button", { name: /驳回/ })).toBeDisabled();
   expect(screen.getByRole("button", { name: /返回仪表盘/ })).toBeEnabled();
 });
+
+test("审查 Important #1：approve reject 时 flash 显示发布失败（不卡死在发布中）", async () => {
+  const api = makeApi();
+  api.approve.mockRejectedValue(new Error("draft d2 不存在"));
+  render(
+    <WorkerProvider apiForTest={api as any}>
+      <DraftsPage onBack={() => {}} />
+    </WorkerProvider>,
+  );
+  expect(await screen.findByText("第二篇")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /通过并发布/ }));
+  expect(await screen.findByText("发布失败：draft d2 不存在")).toBeInTheDocument();
+});
+
+test("审查 Important #1：reject 失败时 flash 显示驳回失败", async () => {
+  const api = makeApi();
+  api.reject.mockRejectedValue(new Error("worker 连接已断开，请重启应用"));
+  render(
+    <WorkerProvider apiForTest={api as any}>
+      <DraftsPage onBack={() => {}} />
+    </WorkerProvider>,
+  );
+  expect(await screen.findByText("第二篇")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: /驳回/ }));
+  expect(await screen.findByText("驳回失败：worker 连接已断开，请重启应用")).toBeInTheDocument();
+});

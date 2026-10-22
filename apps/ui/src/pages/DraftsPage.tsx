@@ -29,17 +29,25 @@ export function DraftsPage({ onBack }: { onBack: () => void }) {
   const approve = async () => {
     if (!current) return;
     setFlash("发布中…");
-    // 只传实际改动的字段——与 Pipeline 的 edited 判定/降权语义对齐（计划末尾注记）
-    const editedTitle = title !== current.title ? title : undefined;
-    const editedBody = body !== current.body ? body : undefined;
-    const r = await api.approve(current.draft_id, editedTitle, editedBody);
-    setFlash(r.success ? `已发布：${r.post_url}` : `发布失败：${r.error ?? ""}`);
+    try {
+      // 只传实际改动的字段——与 Pipeline 的 edited 判定/降权语义对齐（计划末尾注记）
+      const editedTitle = title !== current.title ? title : undefined;
+      const editedBody = body !== current.body ? body : undefined;
+      const r = await api.approve(current.draft_id, editedTitle, editedBody);
+      setFlash(r.success ? `已发布：${r.post_url}` : `发布失败：${r.error ?? ""}`);
+    } catch (e: any) {
+      setFlash(`发布失败：${e?.message ?? e}`);
+    }
   };
 
   const reject = async () => {
     if (!current) return;
-    await api.reject(current.draft_id, reason.trim() || "(未填理由)");
-    setFlash("已驳回，理由已沉淀到记忆");
+    try {
+      await api.reject(current.draft_id, reason.trim() || "(未填理由)");
+      setFlash("已驳回，理由已沉淀到记忆");
+    } catch (e: any) {
+      setFlash(`驳回失败：${e?.message ?? e}`);
+    }
   };
 
   return (
@@ -68,7 +76,9 @@ export function DraftsPage({ onBack }: { onBack: () => void }) {
               </div>
             </>
           )}
-          {flash && <div style={{ color: "var(--c-primary)" }}>{flash}</div>}
+          {flash && (
+            <div style={{ color: flash.includes("失败") ? "var(--c-warn)" : "var(--c-primary)" }}>{flash}</div>
+          )}
         </div>
       ) : <div className="draft-editor">暂无草稿</div>}
     </div>
