@@ -1732,3 +1732,5 @@ git commit -m "feat: 打包配置与项目 README——计划 3 收尾"
 
 28. **Windows 进程树终止**（P3T3 审查 Important，Task 11 落地）：`workerProc.kill()` 在 Windows 上只杀 uv 不杀 python 子进程——每次正常退出都留孤儿 worker（持有 agent.db 与端口，重启累积僵尸，自动复现决策 #15 的并发写风险）。修法：spawnWorker 增加 `killTree()`——win32 用 `taskkill /pid <pid> /f /t`，其他平台 `child.kill("SIGTERM")`；main.ts 的 `window-all-closed` 与 boot 失败路径（`app.exit(1)` 前）都改调它。
 29. **workerClient 断连语义**（P3T3 审查 Important，Task 7 落地）：ws close/error 后挂起请求会各挂 300s、新请求静默丢弃。修法：`close` 事件 → reject 全部 pending（"worker 连接已断开"）+ `connected` 守卫（send 前检查 readyState）；UI 数据层消费该错误显示"worker 已断开，请重启应用"。
+
+30. **秒针回卷与相位**（P3T6 审查，Task 10 顺手）：59s→0s 时 CSS 按数值插值反向扫过 354°（每分钟一次视觉闪跳）——MiniClock 秒角改连续累积（如 `s*6 + minutesElapsed*360` 或等价）即可；interval 相位未对齐秒边界属可接受记录项。
