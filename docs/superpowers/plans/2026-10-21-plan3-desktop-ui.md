@@ -1729,3 +1729,6 @@ git commit -m "feat: 打包配置与项目 README——计划 3 收尾"
 ### 计划 3 执行中补充决策
 
 27. **运行期间禁用审核操作**（P3T1 审查）：service 层 state_lock 在整个流水线运行期间持有（真实 LLM+配图可达数十秒），期间 approve/reject 会排队等待——Task 8/9 的 UI 在"正在运行"状态下禁用审核按钮并显示运行中提示，而不是让用户面对挂起。
+
+28. **Windows 进程树终止**（P3T3 审查 Important，Task 11 落地）：`workerProc.kill()` 在 Windows 上只杀 uv 不杀 python 子进程——每次正常退出都留孤儿 worker（持有 agent.db 与端口，重启累积僵尸，自动复现决策 #15 的并发写风险）。修法：spawnWorker 增加 `killTree()`——win32 用 `taskkill /pid <pid> /f /t`，其他平台 `child.kill("SIGTERM")`；main.ts 的 `window-all-closed` 与 boot 失败路径（`app.exit(1)` 前）都改调它。
+29. **workerClient 断连语义**（P3T3 审查 Important，Task 7 落地）：ws close/error 后挂起请求会各挂 300s、新请求静默丢弃。修法：`close` 事件 → reject 全部 pending（"worker 连接已断开"）+ `connected` 守卫（send 前检查 readyState）；UI 数据层消费该错误显示"worker 已断开，请重启应用"。
