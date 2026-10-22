@@ -13,7 +13,7 @@ export type WorkerApi = {
   run(platform: string): Promise<Draft>;
   approve(draftId: string, title?: string, body?: string): Promise<{ success: boolean; post_url: string; error: string | null }>;
   reject(draftId: string, reason: string): Promise<void>;
-  onEvent(cb: (method: string, params: any) => void): void;
+  onEvent(cb: (method: string, params: any) => void): () => void;
 };
 
 /** Electron 内走 preload bridge；纯浏览器开发态直连 worker WebSocket。 */
@@ -31,13 +31,21 @@ export function createApi(): WorkerApi {
     if (!connecting) {
       connecting = new Promise<void>((resolve, reject) => {
         ws = new WebSocket(wsUrl);
+        hook();   // 建连即挂消息分发——纯订阅者（不经 request）也能收广播
         ws.onopen = () => { connecting = null; resolve(); };
-        ws.onerror = (e) => { connecting = null; reject(e); };
+        ws.onerror = () => { connecting = null; reject(new Error("无法连接 worker（dev 直连模式需先启动 worker serve）")); };
+        // 决策 #29 镜像：断连即拒绝全部挂起请求，并复位以允许下次 ensureWs 重连
+        ws.onclose = () => {
+          for (const p of pending.values()) p.reject(new Error("worker 连接已断开，请重启应用"));
+          pending.clear();
+          ws = null;
+          connecting = null;
+        };
       });
     }
     return connecting;
   };
-  // 单连接共享：消息分发（决策 #14：先判通知帧再走 pending）
+  // 单连接共享：消息分发（决策 #14：先判通知帧再走 pending）。只碰 onmessage，不覆盖 onclose
   const hook = () => {
     ws!.onmessage = (ev) => {
       const msg = JSON.parse(ev.data as string);
@@ -56,7 +64,6 @@ export function createApi(): WorkerApi {
   const request = async (method: string, params: Record<string, unknown> = {}) => {
     if (bridge) return bridge.invoke(method, params);
     await ensureWs();
-    hook();
     const id = nextId++;
     return new Promise<any>((resolve, reject) => {
       pending.set(id, { resolve, reject });
@@ -75,8 +82,13 @@ export function createApi(): WorkerApi {
       request("approve", { draft_id: draftId, ...(title ? { title } : {}), ...(body ? { body } : {}) }),
     reject: (draftId, reason) => request("reject", { draft_id: draftId, reason }),
     onEvent: (cb) => {
-      if (bridge) bridge.onEvent(cb);
-      else listeners.push(cb);
+      if (bridge) return bridge.onEvent(cb);
+      if (listeners.length === 0) void ensureWs().catch(() => {});   // 首次注册即建连（失败静默，请求路径会再报）
+      listeners.push(cb);
+      return () => {
+        const i = listeners.indexOf(cb);
+        if (i !== -1) listeners.splice(i, 1);
+      };
     },
   };
 }

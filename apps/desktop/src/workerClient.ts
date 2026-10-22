@@ -8,7 +8,6 @@ export class WorkerClient {
   private nextId = 1;
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
   private handlers: NotificationHandler[] = [];
-  private closed = false;   // 决策 #29：close 后终态标记，不再接受新请求
 
   constructor(private url: string, private timeoutMs = 300000) {}   // Playwright 发布慢，超时放宽
 
@@ -20,7 +19,6 @@ export class WorkerClient {
       this.ws.on("message", (raw) => this.dispatch(JSON.parse(String(raw))));
       // 决策 #29：断连即拒绝全部挂起请求，避免各挂 300s、新请求被静默丢弃
       this.ws.on("close", () => {
-        this.closed = true;
         for (const p of this.pending.values()) p.reject(new Error("worker 连接已断开，请重启应用"));
         this.pending.clear();
       });
