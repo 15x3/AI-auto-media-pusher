@@ -941,8 +941,8 @@ test("clock ticks angles and time text each second", () => {
   render(<MiniClock />);
   const orbit = screen.getByRole("img", { name: "当前时间" });
 
-  expect(orbit.style.getPropertyValue("--hour-angle")).toBe("154.5deg");    // (15%12)*30+49*0.5
-  expect(orbit.style.getPropertyValue("--minute-angle")).toBe("302deg");    // 49*6+20*0.1
+  expect(orbit.style.getPropertyValue("--hour-angle")).toBe("114.5deg");    // (15%12)*30+49*0.5（原计划笔误 154.5，公式与 orbital-clock 原件 15:49=114.5deg 互证）
+  expect(orbit.style.getPropertyValue("--minute-angle")).toBe("296deg");    // 49*6+20*0.1（原计划笔误 302）
   expect(orbit.style.getPropertyValue("--second-angle")).toBe("120deg");    // 20*6
   expect(orbit.style.getPropertyValue("--day-angle")).toContain("deg");
   expect(screen.getByTestId("clock-time").textContent).toBe("15:49:20");
