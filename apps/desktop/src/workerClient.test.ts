@@ -43,3 +43,26 @@ test("request/response with correlation + notification passthrough (决策 #14)"
   client.close();
   expect(received[0]).toMatchObject({ method: "echo", params: { v: 7 } });
 });
+
+test("断连语义（决策 #29）：close 时挂起请求立即 reject，新请求立即报不可用", async () => {
+  // 独立服务器：收下请求但永不回复（模拟 worker 崩溃时请求在途）
+  let serverSide: any;
+  const wss2 = await new Promise<WebSocketServer>((resolve) => {
+    const s: WebSocketServer = new WebSocketServer({ port: 0 }, () => resolve(s));
+    s.on("connection", (ws) => { serverSide = ws; });   // 不注册 message 响应
+  });
+  // timeoutMs 缩短只是让缺陷态快速暴露；GREEN 下 close 事件毫秒级到达，与超时无关
+  const client = new WorkerClient(`ws://127.0.0.1:${(wss2.address() as any).port}`, 2000);
+  try {
+    await client.connect();
+
+    const held = client.request("echo", { v: 1 });      // 服务器永不回复 → 挂起
+    await new Promise((r) => setTimeout(r, 50));         // 等请求送达并注册进 pending
+    serverSide.terminate();                              // worker 侧断连
+
+    await expect(held).rejects.toThrow("断开");           // 在途请求不再各挂 300s
+    await expect(client.request("echo", { v: 2 })).rejects.toThrow("不可用");  // 新请求立即失败
+  } finally {
+    await new Promise<void>((r) => wss2.close(() => r()));
+  }
+});
