@@ -1,8 +1,10 @@
 """Agent 流水线：调研 → L3 召回 → 写作 → 配图 → compose → 待审；审核后发布并写回 L3。"""
 import json
 import sqlite3
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 
 from .adapters.base import AdapterRegistry, PlatformPost, PublishResult
 from .llm.client import Embedder, LLMClient
@@ -44,15 +46,20 @@ class Pipeline:
         embedder: Embedder,
         con: sqlite3.Connection,
         agent_id: str = "default",
+        image_client=None,                       # 可选：OpenAIImageClient（协议 generate(prompt, out_path) -> Path）
+        images_root: Path = Path("data/images"),
     ) -> None:
         self.registry = registry
         self.llm = llm
+        self.embedder = embedder
         self.agent = AgentMemory(con, agent_id)
         self.global_mem = GlobalMemory(con, embedder)
         self._con = con
         self._run_no = self._count_runs()
         self.drafts: dict[str, Draft] = {}
         self.last_context: RunContext | None = None
+        self.image_client = image_client
+        self.images_root = Path(images_root).resolve()
         self._load_drafts()
 
     # ---- 运行 ----
@@ -70,10 +77,23 @@ class Pipeline:
 
         ctx.recalled = self.global_mem.recall(topic, k=3)  # ② 写作前召回（风格样例）
         style_block = "\n".join(f"- {r['title']}" for r in ctx.recalled) or "（暂无历史帖）"
-        prefs_block = json.dumps(self.agent.get_prefs(), ensure_ascii=False)
+        prefs = dict(self.agent.get_prefs())
+        rejections = prefs.pop("rejections", [])
+        if len(rejections) > 10:
+            prefs["rejections_摘要"] = f"共 {len(rejections)} 条（仅列最近 10 条）"
+            prefs["rejections"] = rejections[-10:]
+        elif rejections:
+            prefs["rejections"] = rejections[-10:]
+        prefs_block = json.dumps(prefs, ensure_ascii=False)
         body = self.llm.complete(WRITER_SYSTEM.format(style_block=style_block, prefs_block=prefs_block), topic)
 
-        images = [f"cover-stub:{topic[:12]}"]  # ③ 配图占位（真实文生图在计划 2）
+        if self.image_client is not None:
+            cover = self.image_client.generate(
+                prompt=f"封面图：{topic}", out_path=self.images_root / f"d{self._run_no}" / "cover.png"
+            )
+            images = [str(cover)]  # 配图：真实文生图封面
+        else:
+            images = [f"cover-stub:{topic[:12]}"]  # 配图占位（无真实客户端时）
         post = adapter.compose_post(topic, body, images)  # ④ 平台规范适配
         draft = Draft(
             draft_id=f"d{self._run_no}",
@@ -95,7 +115,11 @@ class Pipeline:
     # ---- 审核动作（人机边界：compose 之后、publish 之前）----
 
     def approve(self, draft_id: str, edited_title: str | None = None, edited_body: str | None = None) -> PublishResult:
-        draft = self.drafts[draft_id]
+        draft = self.drafts.get(draft_id)
+        if draft is None:
+            raise ValueError(f"draft {draft_id} 不存在")
+        edited_title = edited_title.strip() or None if edited_title is not None else None
+        edited_body = edited_body.strip() or None if edited_body is not None else None
         if draft.status != "pending_review":
             raise ValueError(f"draft {draft_id} 状态为 {draft.status}，不能发布")
 
@@ -110,14 +134,21 @@ class Pipeline:
         result = adapter.execute_publish(draft.post)
         if result.success:
             draft.status = "published"
+            # 注意：发布后 DB 写失败会遮蔽成功事实（at-least-once 语义，决策 #10）
             self._save_draft(draft)
-            self.global_mem.add(  # L3 写回；被改写的帖子 edited=True → 召回降权
-                text=f"{title}\n{body}", platform=draft.platform, title=title, body=body, edited=edited
-            )
+            try:
+                self.global_mem.add(  # L3 写回；被改写的帖子 edited=True → 召回降权
+                    text=f"{title}\n{body}", platform=draft.platform, title=title, body=body, edited=edited
+                )
+            except Exception as exc:  # noqa: BLE001 - 记忆写失败不遮蔽发布成功
+                print(f"[memory] L3 写回失败（发布已成功）: {exc}", file=sys.stderr)
         return result
 
     def reject(self, draft_id: str, reason: str) -> None:
-        draft = self.drafts[draft_id]
+        reason = reason.strip() or "(未填理由)"  # 空理由规整，不裸入库
+        draft = self.drafts.get(draft_id)
+        if draft is None:
+            raise ValueError(f"draft {draft_id} 不存在")
         if draft.status != "pending_review":
             raise ValueError(f"draft {draft_id} 状态为 {draft.status}，不能驳回")
         draft.status = "rejected"

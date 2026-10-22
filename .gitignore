@@ -6,3 +6,6 @@ demo_published.json
 agent.db
 agent.db-wal
 agent.db-shm
+config.toml
+data/
+worker/tests/tmp_profiles/

@@ -9,12 +9,13 @@ if TYPE_CHECKING:
 
 
 class GlobalMemory:
-    def __init__(self, con: sqlite3.Connection, embedder: "Embedder", dims: int = 8) -> None:
+    def __init__(self, con: sqlite3.Connection, embedder: "Embedder", dims: int | None = None) -> None:
         self._con = con
         self._embedder = embedder
-        probe = embedder.embed(["probe"])[0]
-        if len(probe) != dims:
-            raise ValueError(f"embedder 输出维度 {len(probe)} 与建表维度 {dims} 不一致")
+        probe = len(embedder.embed(["probe"])[0])
+        if dims is not None and dims != probe:
+            raise ValueError(f"embedder 维度 {probe} 与声明 dims={dims} 不符")
+        dims = probe
         con.enable_load_extension(True)
         sqlite_vec.load(con)
         con.enable_load_extension(False)
