@@ -1,5 +1,8 @@
 .superpowers/
 .venv/
+node_modules/
+dist/
+*.tsbuildinfo
 __pycache__/
 *.pyc
 demo_published.json
@@ -9,3 +12,4 @@ agent.db-shm
 config.toml
 data/
 worker/tests/tmp_profiles/
+apps/desktop/release/

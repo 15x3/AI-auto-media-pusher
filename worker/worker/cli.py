@@ -4,6 +4,7 @@
 无 → 回退桩与 demo 平台，并打印配置提示。
 """
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from .llm.client import StubEmbedder, StubLLM
 from .llm.openai_compat import OpenAIChatClient, OpenAIEmbedder, OpenAIImageClient
 from .memory.store import connect
 from .pipeline import Pipeline
+from .service import build_service
 
 
 def _load_config_if_any(config_path: str | None):
@@ -79,6 +81,9 @@ def main(argv: list[str] | None = None) -> None:
     reject_p = sub.add_parser("reject", help="驳回草稿")
     reject_p.add_argument("draft_id")
     reject_p.add_argument("reason")
+    serve_p = sub.add_parser("serve", help="启动 RPC 服务（Electron 桌面端用）")
+    serve_p.add_argument("--host", default="127.0.0.1")
+    serve_p.add_argument("--port", type=int, default=8765)
 
     args = parser.parse_args(argv)
     if args.cmd == "adapters":
@@ -105,6 +110,23 @@ def main(argv: list[str] | None = None) -> None:
         print(f"platform={args.platform} status={report.status.value} detail={report.detail}")
         if report.status.value != "ok":
             raise SystemExit(1)
+        return
+
+    if args.cmd == "serve":
+        pipe = _pipeline(args.db, args.config)
+        cfg = _load_config_if_any(args.config)
+        server = build_service(
+            registry=pipe.registry, pipeline=pipe,
+            real_mode=bool(cfg and cfg.llm),
+            has_image=bool(cfg and cfg.image),
+            has_embedding=bool(cfg and cfg.embedding),
+        )
+        server.host, server.port = args.host, args.port
+        # 就绪行由 serve_forever 在端口回填后打印——--port 0 时打印实际分配端口而非 0
+        try:
+            asyncio.run(server.serve_forever())
+        except KeyboardInterrupt:
+            pass
         return
 
     if args.cmd == "run":

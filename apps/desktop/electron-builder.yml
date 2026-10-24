@@ -1,0 +1,15 @@
+appId: com.local.ai-media-pusher
+productName: AGENT Console
+directories:
+  output: release
+files:
+  - dist/**
+# UI 不进 asar：`../../apps/ui/dist/**` 这类项目外 pattern 会被 electron-builder 静默忽略，
+# 实际只经下方 extraResources 生效（落到 resources/ui，由 main.ts 按 resourcesPath 加载）
+extraResources:
+  - from: ../../apps/ui/dist
+    to: ui
+win:
+  # 无签名证书与自定义图标；关闭 rcedit/签名可绕开 winCodeSign 工具链
+  # （其 7z 含 macOS 符号链接，Windows 非管理员/开发者模式无法解包）
+  signAndEditExecutable: false

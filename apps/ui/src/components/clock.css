@@ -1,0 +1,18 @@
+.mini-clock { display: flex; align-items: center; gap: 10px; }
+.mc-orbit { position: relative; width: 40px; height: 40px; border: 1px solid color-mix(in srgb, var(--c-primary) 35%, transparent);
+  border-radius: 50%; background: radial-gradient(circle, rgba(21,36,63,.5) 0, rgba(21,36,63,.5) 62%, rgba(8,14,28,.25) 63%); }
+.mc-orbit::before { content: ""; position: absolute; inset: -2px; border-radius: 50%;
+  background: conic-gradient(from -90deg, var(--c-secondary) var(--day-angle), rgba(142,183,229,.14) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0); }
+.mc-orbit::after { content: ""; position: absolute; z-index: 5; left: 50%; top: 50%; width: 4px; height: 4px;
+  border-radius: 50%; background: #eafaff; box-shadow: 0 0 6px var(--c-primary); transform: translate(-50%, -50%); }
+.mc-hand { position: absolute; z-index: 2; left: 50%; bottom: 50%; width: 1.5px; border-radius: 999px; transform-origin: 50% 100%; }
+.mc-hand.h { height: 10px; background: #f7fbff; transform: translateX(-50%) rotate(var(--hour-angle)); }
+.mc-hand.m { height: 13px; background: var(--c-primary); transform: translateX(-50%) rotate(var(--minute-angle)); }
+.mc-hand.s { z-index: 3; width: 1px; height: 16px; background: var(--c-warn);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--c-warn) 70%, transparent);
+  transform: translateX(-50%) rotate(var(--second-angle)); transition: transform .12s linear; }
+@media (prefers-reduced-motion: reduce) { .mc-hand.s { transition: none; } }
+.mc-time { font-size: 16px; font-weight: 300; color: #f5fbff; font-variant-numeric: tabular-nums; }
+.mc-time em { font-style: normal; color: var(--c-primary); font-size: 11px; margin-left: 1px; }
+.mc-label { font-size: 7px; font-weight: 700; letter-spacing: .18em; color: #8199bb; }

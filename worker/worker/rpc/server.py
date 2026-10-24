@@ -66,3 +66,12 @@ class RpcServer:
             if self.port == 0:
                 self.port = s.sockets[0].getsockname()[1]
             yield self
+
+    async def serve_forever(self) -> None:
+        """启动并阻塞（Ctrl-C 退出）——供 CLI serve / Electron 守护使用。
+
+        就绪行在端口回填后打印（port=0 时打印实际分配端口，而非 0）。
+        """
+        async with self.start():
+            print(f"worker serving on {self.url}", flush=True)
+            await asyncio.Future()
