@@ -1,18 +1,21 @@
 {
   "name": "@app/desktop",
+  "version": "0.1.0",
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build -w @app/ui && tsc -p tsconfig.json",
     "start": "npm run build && electron .",
     "dev": "npm run build && cross-env VITE_DEV=1 electron .",
+    "dist": "npm run build && electron-builder --win",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.5.0",
     "@types/ws": "^8.5.12",
     "cross-env": "^7.0.3",
-    "electron": "^32.0.0",
+    "electron": "32.3.3",
+    "electron-builder": "^25.1.8",
     "typescript": "^5.5.4",
     "vitest": "^2.0.5",
     "ws": "^8.18.0"

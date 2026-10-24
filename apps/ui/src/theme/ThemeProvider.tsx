@@ -16,9 +16,10 @@ const ThemeCtx = createContext<{ theme: ThemeId; setTheme: (t: ThemeId) => void 
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<ThemeId>(
-    () => (localStorage.getItem("app-theme") as ThemeId | null) ?? "frost",
-  );
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    const stored = localStorage.getItem("app-theme");
+    return THEMES.some((t) => t.id === stored) ? (stored as ThemeId) : "frost";
+  });
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("app-theme", theme);

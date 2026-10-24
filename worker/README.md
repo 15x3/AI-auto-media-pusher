@@ -26,3 +26,9 @@
   `error=selector_broken`，按 `adapters/*.py` 顶部的 SELECTORS 注释校准。
 - 全部凭据（config.toml、浏览器 profile、SQLite）仅在本地，不上传。
 - 更换 embedding 模型需新建 DB（向量维度随库固定）。
+
+## 桌面端服务模式
+
+    uv run python -m worker serve --port 8765
+
+供 Electron 主进程守护调用（见 ../apps/desktop）。注意：serve 常驻实例与手动 CLI 并存写同一 db 时可能撞 draft_id（自用单机可接受，表现为覆盖待审草稿）。

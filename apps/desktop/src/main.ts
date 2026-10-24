@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "path";
 import { WorkerClient } from "./workerClient";
-import { findFreePort, spawnWorker } from "./spawnWorker";
+import { findFreePort, spawnWorker, killTree } from "./spawnWorker";
 
 const isDev = !!process.env.VITE_DEV;
 let client: WorkerClient | null = null;
@@ -21,7 +21,11 @@ async function boot() {
       client = null;
     }
   }
-  if (!client) { app.exit(1); return; }
+  if (!client) {
+    if (workerProc) killTree(workerProc);
+    app.exit(1);
+    return;
+  }
 
   client.onNotification((method, params) => {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("worker-event", method, params);
@@ -36,11 +40,17 @@ async function boot() {
     webPreferences: { preload: path.join(__dirname, "preload.js") },
   });
   if (isDev) await win.loadURL("http://localhost:5173");
-  else await win.loadFile(path.join(__dirname, "../../ui/dist/index.html"));
+  else {
+    // asar 打包下 __dirname/../../ui/dist 不可达，打包产物经 extraResources 把 ui/dist 落到 resources/ui
+    const indexPath = app.isPackaged
+      ? path.join(process.resourcesPath, "ui", "index.html")
+      : path.join(__dirname, "../../ui/dist/index.html");
+    await win.loadFile(indexPath);
+  }
 }
 
 app.whenReady().then(boot);
 app.on("window-all-closed", () => {
-  workerProc?.kill();
+  if (workerProc) killTree(workerProc);
   app.quit();
 });
