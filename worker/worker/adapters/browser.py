@@ -17,6 +17,8 @@ from pathlib import Path
 from .base import HealthReport, HealthStatus, PlatformAdapter
 
 LOGIN_TIMEOUT_SECONDS = 180
+LOGIN_POLL_SECONDS = 3000       # 登录页 URL 监视窗口（ms）——等待扫码的主节奏
+LOGIN_FALLBACK_CHECKS = 5       # 每 N 个窗口做一次全量 check_health 兜底（≈15s 一次）
 
 _tls = threading.local()
 
@@ -90,20 +92,55 @@ class PlaywrightBase(PlatformAdapter):
             with suppress(Exception):
                 page.close()
 
+    def _still_on_login(self, url: str) -> bool:
+        """页面是否仍停留在登录环节：与 LOGIN_URL 同域同路径前缀，或路径含 /login
+        （覆盖 SSO 域跳转链，如 passport.xxx/login）。扫码成功后站点跳转离开即视为完成。"""
+        from urllib.parse import urlsplit
+
+        login = urlsplit(self.LOGIN_URL)
+        cur = urlsplit(url)
+        same_spot = cur.netloc == login.netloc and cur.path.startswith(login.path.rstrip("/") or "/")
+        return same_spot or "/login" in cur.path
+
     def login(self) -> HealthReport:
-        """打开登录页，人工扫码/输入，轮询 check_health 直到 OK 或超时。"""
+        """打开登录页，人工扫码/输入，直到 OK 或超时。
+
+        检测主信号：监视本页 URL 离开登录环节——扫码成功后站点会自行跳转（事件驱动，
+        零额外页签）。仅低频兜底（LOGIN_FALLBACK_CHECKS 个窗口一次）和跳转后一次
+        权威确认才做全量 check_health：旧实现每 3 秒新开页签轮询，在可见浏览器里
+        表现为登录页持续闪切"刷新"，且反复抢占扫码时的焦点。
+        """
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
         with self.browser_page() as page:
             page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
             deadline = time.time() + LOGIN_TIMEOUT_SECONDS
+            window = 0
             while time.time() < deadline:
                 try:
-                    healthy = self.check_health().status is HealthStatus.OK
-                except Exception:  # noqa: BLE001 - 网络抖动/导航瞬时错误不打断 180 秒扫码等待
-                    healthy = False
-                if healthy:
+                    page.wait_for_url(lambda url: not self._still_on_login(url), timeout=LOGIN_POLL_SECONDS)
+                except PlaywrightTimeoutError:
+                    # 等待扫码中：不开新页签；低频兜底全量体检（登录页个别站点不跳转的场景）
+                    window += 1
+                    if window % LOGIN_FALLBACK_CHECKS == 0 and self._health_ok():
+                        return HealthReport(HealthStatus.OK, "登录成功")
+                    continue
+                except Exception:  # noqa: BLE001 - 页签被关闭等：退化为慢轮询，deadline 兜底
+                    time.sleep(1)
+                    continue
+                if self._health_ok():  # URL 已离开登录页：一次权威确认
                     return HealthReport(HealthStatus.OK, "登录成功")
-                page.wait_for_timeout(3000)
+                try:
+                    page.wait_for_timeout(2000)  # 确认未过（迟到状态）：限频防紧循环
+                except Exception:  # noqa: BLE001
+                    time.sleep(1)
         return HealthReport(HealthStatus.NEEDS_LOGIN, f"{LOGIN_TIMEOUT_SECONDS} 秒内未完成登录")
+
+    def _health_ok(self) -> bool:
+        try:
+            return self.check_health().status is HealthStatus.OK
+        except Exception:  # noqa: BLE001 - 网络抖动/导航瞬时错误不打断 180 秒扫码等待
+            return False
 
     def close(self) -> None:
         # 只关 context；playwright 实例归线程单例所有（跨适配器共享），由 atexit 统一停止

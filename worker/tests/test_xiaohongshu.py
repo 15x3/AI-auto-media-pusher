@@ -140,3 +140,76 @@ def test_execute_publish_platform_rejected_bucket_semantics(tmp_path, monkeypatc
     assert not result.success
     assert result.error is PublishError.SELECTOR_BROKEN
     assert "环境异常" in result.detail
+
+
+# ---- login 轮询行为（修复：可见浏览器中登录页"每 3 秒刷新一次"）----
+
+def _attach_page_counter(a: XiaohongshuAdapter) -> list:
+    """物化 context 并挂页签计数器——login 期间新开的每个页签都会被记录。"""
+    opened = []
+    with a.browser_page():
+        a._context.on("page", lambda p: opened.append(p))
+    return opened
+
+
+def test_login_pending_phase_opens_no_polling_tabs(tmp_path, monkeypatch):
+    """判别测试：等待扫码期间不得反复新开页签轮询（旧实现每 3 秒一次，
+    可见浏览器里表现为登录页持续闪切刷新）。主信号是监视本页 URL 跳转，
+    7 秒观察窗内（兜底体检 15 秒一次）应零额外页签。"""
+    from worker.adapters import browser as browser_mod
+
+    login_page = tmp_path / "login_static.html"
+    login_page.write_text('<div class="login_container">扫码</div>', encoding="utf-8")
+    a = make_adapter(tmp_path,
+                     **{"**://fake.login/**": login_page,
+                        "**://creator.xiaohongshu.com/**": FIXTURES / "xhs_home_logged_out.html"})
+    a.LOGIN_URL = "https://fake.login/"
+    monkeypatch.setattr(browser_mod, "LOGIN_TIMEOUT_SECONDS", 7)
+    opened = []
+    try:
+        opened = _attach_page_counter(a)
+        report = a.login()
+        assert report.status is HealthStatus.NEEDS_LOGIN   # fixture 无跳转且未登录 → 超时
+        assert len(opened) == 1                            # 仅 login 自己的页签，无轮询页签
+    finally:
+        a.close()
+
+
+def test_login_detects_redirect_after_scan(tmp_path):
+    """守卫：扫码成功后登录页自跳转（fixture 用 meta refresh 模拟）→
+    一次权威 check_health 确认 → OK。页签数 = 登录页 + 1 次确认。"""
+    login_page = tmp_path / "login_refresh.html"
+    login_page.write_text(
+        '<meta http-equiv="refresh" content="1;url=https://creator.xiaohongshu.com/console">'
+        '<div class="login_container">扫码</div>', encoding="utf-8")
+    a = make_adapter(tmp_path,
+                     **{"**://fake.login/**": login_page,
+                        "**://creator.xiaohongshu.com/**": FIXTURES / "xhs_home_logged_in.html"})
+    a.LOGIN_URL = "https://fake.login/"
+    try:
+        opened = _attach_page_counter(a)
+        report = a.login()
+        assert report.status is HealthStatus.OK
+        assert len(opened) == 2                            # 登录页签 + 一次确认体检
+    finally:
+        a.close()
+
+
+def test_login_fallback_full_check_when_page_stays(tmp_path, monkeypatch):
+    """守卫：登录页不跳转但登录态已就绪 → 低频兜底全量体检捕获 → OK。"""
+    from worker.adapters import browser as browser_mod
+
+    login_page = tmp_path / "login_static.html"
+    login_page.write_text('<div class="login_container">扫码</div>', encoding="utf-8")
+    a = make_adapter(tmp_path,
+                     **{"**://fake.login/**": login_page,
+                        "**://creator.xiaohongshu.com/**": FIXTURES / "xhs_home_logged_in.html"})
+    a.LOGIN_URL = "https://fake.login/"
+    monkeypatch.setattr(browser_mod, "LOGIN_FALLBACK_CHECKS", 1)  # 每窗口兜底一次
+    try:
+        opened = _attach_page_counter(a)
+        report = a.login()
+        assert report.status is HealthStatus.OK
+        assert len(opened) == 2                            # 登录页签 + 一次兜底体检
+    finally:
+        a.close()
