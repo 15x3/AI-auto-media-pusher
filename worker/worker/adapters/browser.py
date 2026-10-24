@@ -5,8 +5,11 @@ FIXTURE_ROUTES 为空时直连真实平台；测试注入 {url模式: 本地HTML
 选择器契约：终端适配器的选择器以 fixture 页为唯一测试契约，真实页面漂移由
 PublishError.SELECTOR_BROKEN 分类捕获后校准（见各适配器 SELECTORS 常量注释）。
 使用约定：FIXTURE_ROUTES 只允许整体赋值（实例属性覆盖类属性）；context 建立后修改不生效（需 close 重开）；
-本基类为单进程同步使用设计（sync Playwright API 线程亲和）。
+本基类为单线程使用设计（sync Playwright API 线程亲和）：playwright 实例按线程单例共享
+（见 _thread_playwright），多线程并发使用由 service 层单线程执行器保证不发生。
 """
+import atexit
+import threading
 import time
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -14,6 +17,31 @@ from pathlib import Path
 from .base import HealthReport, HealthStatus, PlatformAdapter
 
 LOGIN_TIMEOUT_SECONDS = 180
+
+_tls = threading.local()
+
+
+def _thread_playwright():
+    """当前线程的 playwright 实例（惰性单例）。
+
+    同线程第二次 sync_playwright().start() 必抛 "Sync API inside the asyncio
+    loop"——sync API 的 greenlet 机制在两次调用之间保持线程的 running-loop
+    标记；而一个实例跨线程使用又违反 greenlet 线程绑定。因此按线程单例：
+    同线程全部适配器共用，跨线程各自持有。进程退出时经 atexit 统一停止。
+    """
+    pw = getattr(_tls, "pw", None)
+    if pw is None:
+        from playwright.sync_api import sync_playwright
+
+        pw = sync_playwright().start()
+        _tls.pw = pw
+        atexit.register(lambda: _stop_quietly(pw))
+    return pw
+
+
+def _stop_quietly(pw) -> None:
+    with suppress(Exception):
+        pw.stop()
 
 
 def _make_fixture_handler(fixture: Path):
@@ -36,7 +64,6 @@ class PlaywrightBase(PlatformAdapter):
     def __init__(self, profiles_root: Path | None = None, headless: bool = False) -> None:
         self._profiles_root = Path(profiles_root) if profiles_root else Path("data/profiles")
         self._headless = headless
-        self._pw = None
         self._context = None
 
     @property
@@ -45,11 +72,9 @@ class PlaywrightBase(PlatformAdapter):
 
     @contextmanager
     def browser_page(self):
-        from playwright.sync_api import sync_playwright
-
         if self._context is None:
-            self._pw = sync_playwright().start()
-            self._context = self._pw.chromium.launch_persistent_context(
+            pw = _thread_playwright()
+            self._context = pw.chromium.launch_persistent_context(
                 user_data_dir=str(self._profile_dir),
                 headless=self._headless,
                 viewport={"width": 1280, "height": 860},
@@ -81,13 +106,9 @@ class PlaywrightBase(PlatformAdapter):
         return HealthReport(HealthStatus.NEEDS_LOGIN, f"{LOGIN_TIMEOUT_SECONDS} 秒内未完成登录")
 
     def close(self) -> None:
+        # 只关 context；playwright 实例归线程单例所有（跨适配器共享），由 atexit 统一停止
         if self._context is not None:
             try:
                 self._context.close()
             finally:
                 self._context = None
-        if self._pw is not None:
-            try:
-                self._pw.stop()
-            finally:
-                self._pw = None

@@ -18,3 +18,7 @@
 .pill.idle { border-color: rgba(48,54,61,.7); color: #6e768d; }
 .card button { cursor: pointer; }
 .card button:disabled { cursor: wait; opacity: .55; }
+.platform-select { font-family: var(--font-mono); font-size: 10px; color: var(--c-primary);
+  background: rgba(10, 13, 20, .7); border: 1px solid color-mix(in srgb, var(--c-primary) 35%, transparent);
+  border-radius: 9px; padding: 3px 6px; max-width: 130px; }
+.platform-select:disabled { opacity: .55; }

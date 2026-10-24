@@ -10,6 +10,13 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const [mem, setMem] = useState({ l2_prefs: 0, l3_posts: 0 });
   const [health, setHealth] = useState<Record<string, { status: string; detail: string }>>({});
   const [runError, setRunError] = useState("");
+  const [platform, setPlatform] = useState("");
+
+  // 运行目标平台：优先用户手选，缺省 demo（桩模式冒烟），再退回第一个注册项
+  const selected =
+    adapters.find((a) => a.platform_id === platform) ??
+    adapters.find((a) => a.platform_id === "demo") ??
+    adapters[0];
 
   const refresh = useCallback(() => {
     api.drafts().then(setDrafts).catch(() => {});
@@ -28,10 +35,10 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
 
   // 决策 #27：运行期间全局禁用触发类操作，流水线结束（或失败）后恢复
   const startRun = () => {
-    if (!adapters[0] || running) return;
+    if (!selected || running) return;
     setRunning(true);
     setRunError("");
-    api.run(adapters[0].platform_id)
+    api.run(selected.platform_id)
       .catch((e) => setRunError(String(e?.message ?? e)))   // T8 审查 Minor #3：失败不静默
       .finally(() => setRunning(false));
   };
@@ -44,8 +51,17 @@ export function Dashboard({ onOpenDrafts }: { onOpenDrafts: () => void }) {
     <div className="grid">
       <Card title="热点雷达" note={running ? "running" : "idle"}>
         <div className="num">{latest ? latest.title.slice(0, 12) : "—"}</div>
-        <div style={{ marginTop: 4 }}>
-          {adapters[0] && (
+        <div style={{ marginTop: 4, display: "flex", gap: 6, alignItems: "center" }}>
+          {adapters.length > 0 && (
+            <select className="platform-select" aria-label="运行平台"
+                    value={selected?.platform_id} disabled={running}
+                    onChange={(e) => setPlatform(e.target.value)}>
+              {adapters.map((a) => (
+                <option key={a.platform_id} value={a.platform_id}>{a.display_name}</option>
+              ))}
+            </select>
+          )}
+          {selected && (
             <button className="pill" onClick={startRun} disabled={running}>
               {running ? "⏳ 运行中…" : "▶ 立即调研"}
             </button>

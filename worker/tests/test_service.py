@@ -122,3 +122,45 @@ async def test_health_unknown_platform_friendly_error(tmp_path):
         async with websockets.connect(server.url) as ws:
             resp = await _call(ws, "health", {"platform": "weibo"})
             assert "未知平台" in resp["error"]
+
+
+async def test_blocking_calls_pinned_to_single_thread(tmp_path):
+    """所有阻塞调用必须固定落在同一个专用线程上。
+
+    Playwright sync 线程亲和：跨线程复用实例会违反 greenlet 绑定；
+    多线程并发还会让多个适配器同时起浏览器（profile 锁/greenlet 串扰）。
+    两个连接并发 health（同连接请求本就被 _handle 串行），断言线程 id 一致。
+    """
+    import threading
+
+    con = connect(tmp_path / "c.db")
+    registry = AdapterRegistry()
+    seen: list[int] = []
+
+    def _probe(pid: str):
+        class ProbeAdapter(DemoAdapter):
+            platform_id = pid
+            display_name = f"探针 {pid}"
+
+            def check_health(self):
+                seen.append(threading.get_ident())
+                time.sleep(0.05)  # 放大并发窗口：默认线程池会开出第二个线程
+                return super().check_health()
+
+        return ProbeAdapter(out_file=tmp_path / f"{pid}.json")
+
+    registry.register(_probe("probe1"))
+    registry.register(_probe("probe2"))
+    pipeline = Pipeline(registry=registry, llm=StubLLM(), embedder=StubEmbedder(), con=con, agent_id="ui")
+    server = build_service(registry=registry, pipeline=pipeline, real_mode=False)
+
+    loop_thread = threading.get_ident()
+
+    async with server.start():
+        async with websockets.connect(server.url) as ws1, websockets.connect(server.url) as ws2:
+            await asyncio.gather(_call(ws1, "health", {"platform": "probe1"}),
+                                 _call(ws2, "health", {"platform": "probe2"}))
+
+    assert len(seen) == 2
+    assert seen[0] == seen[1], f"阻塞调用落在不同线程 {seen}——Playwright 线程亲和被破坏"
+    assert seen[0] != loop_thread, "阻塞调用跑在了事件循环线程上"

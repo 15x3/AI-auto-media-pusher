@@ -99,3 +99,25 @@ test("T8 审查 Minor #3：run 失败显示错误文案且不再静默", async (
   // finally 复位运行态，可重试
   await waitFor(() => expect(screen.getByRole("button", { name: /立即调研/ })).toBeEnabled());
 });
+
+test("多适配器：平台选择器默认 demo（桩模式冒烟），切换后 run 用所选平台而非 adapters[0]", async () => {
+  const api = makeApi();
+  api.adapters.mockResolvedValue([
+    { platform_id: "bilibili_column", display_name: "B站专栏" },
+    { platform_id: "demo", display_name: "本地演示平台" },
+    { platform_id: "xiaohongshu", display_name: "小红书" },
+  ]);
+  render(
+    <WorkerProvider apiForTest={api as any}>
+      <Dashboard onOpenDrafts={() => {}} />
+    </WorkerProvider>,
+  );
+  const select = await screen.findByRole("combobox");
+  // 默认选中 demo，而非注册序第一的 bilibili_column
+  expect((select as HTMLSelectElement).value).toBe("demo");
+
+  fireEvent.change(select, { target: { value: "xiaohongshu" } });
+  const btn = screen.getByRole("button", { name: /立即调研/ });
+  await act(async () => { fireEvent.click(btn); });
+  expect(api.run).toHaveBeenCalledWith("xiaohongshu");
+});

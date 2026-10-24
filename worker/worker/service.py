@@ -1,6 +1,7 @@
 """RPC 服务层：把 registry / pipeline 接成 JSON-RPC 方法。阻塞调用经执行器卸载，不卡事件循环。"""
 import asyncio
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 from .rpc.server import RpcServer
 
@@ -21,10 +22,15 @@ def build_service(registry, pipeline, real_mode: bool, has_image: bool = False,
     # run/approve/reject 共用一把锁串行化变更型操作：防并发 run 算出相同 draft_id 互相覆盖，
     # 也关闭 approve/reject 与 run 在共享 sqlite 连接上的跨线程事务交错窗口
     state_lock = asyncio.Lock()
+    # Playwright sync 适配器线程亲和且同一 profile 不支持并发浏览器：全部阻塞调用
+    # 固定到单线程执行器串行执行（run 进行中 health 排队——自用工具可接受，
+    # 与 state_lock 的串行语义一致；此前用默认多线程池，并发 health 会让两个
+    # 适配器同时起 playwright，触发 "Sync API inside the asyncio loop" 等竞态）
+    blocking = ThreadPoolExecutor(max_workers=1, thread_name_prefix="worker-blocking")
 
     async def _run(fn, *args):
-        # Playwright/LLM 都是阻塞调用——在协程内取运行环卸载到执行器（3.12 禁在无运行环处 get_event_loop）
-        return await asyncio.get_running_loop().run_in_executor(None, fn, *args)
+        # Playwright/LLM 都是阻塞调用——在协程内取运行环卸载到专用单线程执行器
+        return await asyncio.get_running_loop().run_in_executor(blocking, fn, *args)
 
     def _platform(params) -> str:
         pid = params.get("platform")
