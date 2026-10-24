@@ -4,7 +4,8 @@ directories:
   output: release
 files:
   - dist/**
-  - ../../apps/ui/dist/**        # 经 extraResources 更稳，见下
+# UI 不进 asar：`../../apps/ui/dist/**` 这类项目外 pattern 会被 electron-builder 静默忽略，
+# 实际只经下方 extraResources 生效（落到 resources/ui，由 main.ts 按 resourcesPath 加载）
 extraResources:
   - from: ../../apps/ui/dist
     to: ui

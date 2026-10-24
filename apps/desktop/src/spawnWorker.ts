@@ -23,6 +23,9 @@ export async function findFreePort(): Promise<number> {
 export function spawnWorker(opts: { repoRoot: string; port: number }): ChildProcess {
   const spec = buildWorkerCommand(opts);
   const child = spawn(spec.command, spec.args, { cwd: spec.cwd, windowsHide: true });
+  // spawn 失败（如未装 uv 的 ENOENT）以 error 事件异步送达；不挂处理器会是
+  // 未处理 EventEmitter error 直接崩主进程。处理后交由 boot 的连接重试走 app.exit(1)。
+  child.on("error", (e) => console.error("[worker] 启动失败:", e.message));
   child.stdout!.on("data", (d) => console.log(`[worker] ${d}`));
   child.stderr!.on("data", (d) => console.error(`[worker] ${d}`));
   return child;
@@ -33,7 +36,8 @@ export function spawnWorker(opts: { repoRoot: string; port: number }): ChildProc
 export function killTree(child: ChildProcess): void {
   if (child.pid === undefined) return;
   if (process.platform === "win32") {
-    spawnCb("taskkill", ["/pid", String(child.pid), "/f", "/t"], { windowsHide: true });
+    spawnCb("taskkill", ["/pid", String(child.pid), "/f", "/t"], { windowsHide: true })
+      .on("error", () => {}); // taskkill 不可用时静默——退出路径不允许二次崩溃
   } else {
     child.kill("SIGTERM");
   }
